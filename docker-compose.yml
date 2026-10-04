@@ -1,0 +1,12 @@
+services:
+  gameserver-panel:
+    build: .
+    container_name: gameserver-panel
+    restart: unless-stopped
+    network_mode: host        # real ports, no Docker NAT in the way of Steam/server list
+    environment:
+      PANEL_PASSWORD: change-me-please   # min 8 chars; the panel refuses to start without it
+      PANEL_PORT: "8080"                 # LAN-only: do NOT forward this port on your router
+      PANEL_MODULE: theship
+    volumes:
+      - ./data:/data

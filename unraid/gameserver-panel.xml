@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>gameserver-panel</Name>
+  <Repository>ghcr.io/thesingularis/gameserver-panel:latest</Repository>
+  <Registry>https://ghcr.io/thesingularis/gameserver-panel</Registry>
+  <Network>host</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/TheSingularis/gameserver-panel</Support>
+  <Overview>Web control panel (start/stop/update/configure/console) for game servers. First module: The Ship: Remasted. Keep the panel port LAN-only; only forward the game ports.</Overview>
+  <Category>GameServers: Tools:</Category>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/gameserver-panel" Mode="rw" Description="Server files, configs, wine prefix" Type="Path" Display="always" Required="true">/mnt/user/appdata/gameserver-panel</Config>
+  <Config Name="Panel password" Target="PANEL_PASSWORD" Default="" Description="Admin password (min 8 chars)" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Panel port" Target="PANEL_PORT" Default="8080" Description="Web UI port (host networking). LAN only." Type="Variable" Display="always" Required="true">8080</Config>
+  <Config Name="Module" Target="PANEL_MODULE" Default="theship" Description="Game module" Type="Variable" Display="advanced">theship</Config>
+</Container>

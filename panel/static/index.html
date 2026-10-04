@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Game Server Panel</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1b1f24;--card:#fff;--mut:#667;--ac:#2563eb;--bd:#d8dce2;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
+@media(prefers-color-scheme:dark){:root{--bg:#14161a;--fg:#e7e9ee;--card:#1d2026;--mut:#9aa3b2;--ac:#5b8cff;--bd:#2d323b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+h1{font-size:20px;margin:8px 0 16px}h2{font-size:15px;margin:0 0 10px}
+button{background:var(--ac);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}
+button.sec{background:transparent;color:var(--fg);border:1px solid var(--bd)}button:disabled{opacity:.5}
+input,textarea{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}
+textarea,pre{font-family:ui-monospace,monospace;font-size:13px}
+pre{background:#0d1014;color:#d6dae0;border-radius:6px;padding:10px;height:320px;overflow:auto;margin:0;white-space:pre-wrap}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.badge{padding:2px 10px;border-radius:99px;font-weight:600;color:#fff}
+.mut{color:var(--mut)}table{border-collapse:collapse}td,th{padding:4px 12px 4px 0;text-align:left}
+#login{max-width:340px;margin:20vh auto}.hide{display:none}
+</style></head><body><main>
+<div id="login" class="card"><h1>Game Server Panel</h1>
+<input id="pw" type="password" placeholder="Admin password" autocomplete="current-password">
+<div class="row" style="margin-top:10px"><button id="loginBtn">Log in</button><span id="loginErr" class="mut"></span></div></div>
+
+<div id="app" class="hide">
+<h1><span id="modName">Game server</span> <span id="state" class="badge"></span></h1>
+<div class="card"><div class="row">
+<button data-act="start">Start</button><button data-act="stop" class="sec">Stop</button>
+<button data-act="restart" class="sec">Restart</button><button data-act="update" class="sec">Update</button>
+<span id="info" class="mut"></span></div><div id="msg" class="mut" style="margin-top:8px"></div></div>
+
+<div class="card"><h2>Ports to forward (router &rarr; this host)</h2><table id="ports"></table></div>
+<div class="card"><h2>Console</h2><pre id="log"></pre></div>
+<div class="card"><h2>Config</h2><div id="cfgs"></div></div>
+<div class="card" id="actionsCard"><h2>Module actions</h2><div id="actions"></div></div>
+</div></main>
+<script>
+const $=s=>document.querySelector(s);
+const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+ if(r.status===401){showLogin();throw new Error('login')}
+ const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.statusText);return j};
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function showLogin(){$('#login').classList.remove('hide');$('#app').classList.add('hide')}
+async function login(){try{await api('POST','/api/login',{password:$('#pw').value});init()}catch(e){$('#loginErr').textContent=e.message}}
+$('#loginBtn').onclick=login;$('#pw').onkeydown=e=>{if(e.key==='Enter')login()};
+const colors={running:'var(--ok)',stopped:'var(--mut)',crashed:'var(--bad)',installing:'var(--warn)',stopping:'var(--warn)'};
+async function refresh(){const s=await api('GET','/api/status');const b=$('#state');b.textContent=s.state;b.style.background=colors[s.state]||'var(--mut)';
+ $('#info').textContent=(s.installed?'':'not installed - press Update. ')+(s.uptime_s!=null?'uptime '+s.uptime_s+'s':'')}
+function addLog(l){const p=$('#log'),end=p.scrollTop+p.clientHeight>=p.scrollHeight-20;p.innerHTML+=esc(l)+'\n';if(end)p.scrollTop=p.scrollHeight}
+async function init(){
+ $('#login').classList.add('hide');$('#app').classList.remove('hide');
+ const m=await api('GET','/api/module');$('#modName').textContent=m.name;
+ $('#ports').innerHTML='<tr><th>Ports</th><th>Protocol</th><th>Note</th></tr>'+m.ports.map(p=>`<tr><td>${p.start===p.end?p.start:p.start+'-'+p.end}</td><td>${p.proto.toUpperCase()}</td><td class=mut>${esc(p.note)}</td></tr>`).join('');
+ $('#cfgs').innerHTML='';
+ for(const name of m.config_files){const c=await api('GET','/api/config/'+name);
+  const d=document.createElement('div');d.innerHTML=`<div class=row><b>${esc(name)}</b></div><textarea rows=12></textarea><div class=row style="margin-top:8px"><button>Save</button><span class=mut></span></div>`;
+  const ta=d.querySelector('textarea');ta.value=c.content;if(!c.content)ta.placeholder='Created on first start of the server. Start once, then edit.';
+  d.querySelector('button').onclick=async()=>{const r=await api('PUT','/api/config/'+name,{content:ta.value});d.querySelector('span').textContent=r.note};$('#cfgs').append(d)}
+ $('#actions').innerHTML='';$('#actionsCard').classList.toggle('hide',!m.actions.includes('steam_login'));
+ if(m.actions.includes('steam_login'))steamForm();
+ const t=await api('GET','/api/logs?n=500');$('#log').textContent='';t.lines.forEach(addLog);
+ refresh();setInterval(()=>refresh().catch(()=>{}),3000);
+ const es=new EventSource('/api/logs/stream');es.onmessage=e=>addLog(e.data);
+}
+function steamForm(){$('#actions').innerHTML=`<p class=mut>Steam login (module-specific). The password is sent once to steamcmd and is not stored by the panel.</p>
+<div class=row><input id=su placeholder="Steam username" style="flex:1"><input id=sp type=password placeholder="Password" style="flex:1"><input id=sg placeholder="Guard code" style="width:120px"><button id=sb>Log in</button></div><div id=sm class=mut></div>`;
+ $('#sb').onclick=async()=>{try{const r=await api('POST','/api/actions/steam_login',{username:$('#su').value,password:$('#sp').value,guard_code:$('#sg').value});$('#sp').value='';$('#sm').textContent=r.ok?'steamcmd login ok':'login failed (see console)'}catch(e){$('#sm').textContent=e.message}}}
+document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{$('#msg').textContent='';
+ try{await api('POST','/api/'+b.dataset.act);}catch(e){$('#msg').textContent=e.message}refresh()});
+api('GET','/api/status').then(init).catch(showLogin);
+</script></body></html>
