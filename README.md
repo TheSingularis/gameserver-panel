@@ -16,25 +16,28 @@ folder + one line in `panel/modules/__init__.py`.
 3. First start creates `server.cfg`; edit name/password/port in the UI and restart.
 
 ## Networking: The Ship: Remasted
-Forward on your router to the host's LAN IP (give it a static IP / DHCP reservation). Use host networking (default here).
+Forward on your router to the host's LAN IP (give it a static IP / DHCP reservation). Use host networking on Linux, or `-p` mappings on Docker Desktop.
 
-| Port | Protocol | Purpose |
+| Port | Protocol | Status |
 |---|---|---|
-| 7776-7778 | TCP **and** UDP | game (default 7777, configurable in server.cfg) |
-| 443 | TCP **and** UDP | used by the server per community docs (can clash with Unraid HTTPS UI; move that) |
+| 7777-7778 | **UDP** | **Verified**: the server binds UDP 7777 (game) and 7778; forwarding these made it appear in the public in-game list |
+| 7776-7778 | TCP | forwarded in the verified setup; whether TCP is required is not isolated yet |
+| 443 | TCP/UDP | community docs mention it; it was **not** forwarded and the server still listed, so likely not needed |
 
+The game port is set in `server.cfg` (the listed community servers use 7781); if you change it, forward that port instead.
 **Never forward the panel port (8080).** It is password-protected but meant for the LAN (or a VPN / reverse proxy with TLS).
 CGNAT (router WAN IP differs from your public IP) makes forwarding impossible; ask your ISP for a public IP.
-Verify: server appears in-game (Dedicated/All tab, versions must match) from the LAN, then from a mobile-data phone or a friend.
+Many routers cannot reach their own public IP from inside the LAN (no NAT loopback): test joining from outside (friend / phone hotspot), or favorite the LAN IP:7777.
+Without the forwards the server ran but did **not** appear in the list, so the forwards are what make it public.
 
 ## Status: what is and isn't verified
 - Tested here: panel core, auth, API, supervisor (start/stop/crash/force-kill/update/restart), Ship launch args, config
   persistence, UI via headless Chromium (`pytest`, 15 tests).
-- **Not tested**: the Docker image build, SteamCMD download, and running the real Windows server under Wine (the
-  development sandbox had no Docker daemon and blocked Steam/Debian hosts).
-- Open risk: community reports say the server wants a running Steam client on an account that owns the game
-  (`SteamAPI_Init` failure otherwise). The module's Steam login action only runs `steamcmd +login`; whether that satisfies the
-  game is unknown until tried on real hardware.
+- Verified on a real desktop (Docker, Arch): image builds; SteamCMD anonymous download; `TSRDedicated.exe` is a **32-bit**
+  exe and runs under `wine32` (win32 prefix); the server binds UDP 7777/7778 and shows up in the in-game public list once ports are forwarded.
+- Not yet verified: joining from outside the LAN; running on Unraid; whether the panel's Steam login (`steamcmd +login`) is
+  actually required for the server to list (it was done before the server listed, so this is not isolated);
+  `UPDATE_ON_START`-style unattended restarts; the published ghcr image.
 
 ## Dev
 `pip install -r requirements-dev.txt && pytest -q` then `PANEL_PASSWORD=devpassword PANEL_DATA=./data python -m panel.main`.
