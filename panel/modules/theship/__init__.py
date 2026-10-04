@@ -76,11 +76,21 @@ class TheShip(GameModule):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(mine, dst)
 
+    @staticmethod
+    def _find_wine() -> str:
+        # Debian ships the wrapper as `wine`; the 64-bit binary lives in /usr/lib/wine and is not on PATH.
+        for cand in ("wine64", "wine", "/usr/lib/wine/wine64"):
+            found = shutil.which(cand)
+            if found:
+                return found
+        raise RuntimeError("wine not found in this container (tried wine64, wine, /usr/lib/wine/wine64)")
+
     def launch_spec(self) -> LaunchSpec:
+        wine = self._find_wine()
         self._sync_config()
         (self.server_dir / "steam_appid.txt").write_text(GAME_APP_ID + "\n")
         (self.server_dir / self.server_id).mkdir(exist_ok=True)
-        argv = ["xvfb-run", "-a", "wine64", EXE, "-batchmode", "-nographics",
+        argv = ["xvfb-run", "-a", wine, EXE, "-batchmode", "-nographics",
                 "+serverid", self.server_id, "+servercfg", self.cfg_name,
                 "-logFile", f"{self.server_id}/tsrds_output.txt"]
         return LaunchSpec(argv, self.server_dir, {

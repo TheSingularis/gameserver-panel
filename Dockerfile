@@ -13,7 +13,8 @@ RUN dpkg --add-architecture i386 \
       ca-certificates curl lib32gcc-s1 lib32stdc++6 libc6-i386 \
       wine wine64 libwine libwine:i386 xvfb xauth procps tini \
       python3 python3-venv \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && (command -v wine64 || command -v wine || test -x /usr/lib/wine/wine64)
 
 RUN mkdir -p /opt/steamcmd \
  && curl -fsSL https://media.steampowered.com/client/installer/steamcmd_linux.tar.gz | tar -xz -C /opt/steamcmd

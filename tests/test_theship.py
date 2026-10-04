@@ -1,7 +1,8 @@
 from panel.modules.theship import TheShip
 
 
-def test_launch_spec_matches_steamdb_args(tmp_path):
+def test_launch_spec_matches_steamdb_args(tmp_path, monkeypatch):
+    monkeypatch.setattr(TheShip, "_find_wine", staticmethod(lambda: "/usr/bin/wine"))
     m = TheShip(tmp_path / "c", tmp_path / "s")
     m.server_dir.mkdir()
     (m.server_dir / "TSRDedicated.exe").write_text("")
@@ -12,7 +13,8 @@ def test_launch_spec_matches_steamdb_args(tmp_path):
     assert (m.server_dir / "steam_appid.txt").read_text().strip() == "383790"
 
 
-def test_config_seeded_from_shipped_then_persisted(tmp_path):
+def test_config_seeded_from_shipped_then_persisted(tmp_path, monkeypatch):
+    monkeypatch.setattr(TheShip, "_find_wine", staticmethod(lambda: "/usr/bin/wine"))
     m = TheShip(tmp_path / "c", tmp_path / "s")
     (m.server_dir / "TSRDS_1").mkdir(parents=True)
     (m.server_dir / "TSRDS_1" / "server.cfg").write_text("shipped")
@@ -38,3 +40,13 @@ async def test_steam_login_validates_and_redacts(tmp_path):
     r = await m._steam_login({"username": "jordan", "password": "hunter2"}, logs.append)
     assert r["ok"]
     assert not any("hunter2" in l for l in logs)
+
+
+def test_find_wine_prefers_available_binary_and_errors_clearly(monkeypatch):
+    import pytest
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda c: "/usr/bin/wine" if c == "wine" else None)
+    assert TheShip._find_wine() == "/usr/bin/wine"
+    monkeypatch.setattr(shutil, "which", lambda c: None)
+    with pytest.raises(RuntimeError, match="wine not found"):
+        TheShip._find_wine()
