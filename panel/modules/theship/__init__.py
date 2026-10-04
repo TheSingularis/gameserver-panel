@@ -1,6 +1,6 @@
 """The Ship: Remasted dedicated server (Steam tool app 443050).
 
-Facts (SteamDB / Steam community): Windows-only 64-bit Unity server, anonymous
+Facts (SteamDB / Steam community): Windows-only Unity server (the exe is 32-bit; SteamDB wrongly implies 64-bit), anonymous
 download, launch args `-batchmode -nographics +serverid X +servercfg server.cfg`,
 steam_appid.txt must be 383790, default ports TCP/UDP 7776-7778 and 443.
 Everything Steam-account related (login) lives here, not in the panel core.
