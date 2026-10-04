@@ -34,10 +34,11 @@ Without the forwards the server ran but did **not** appear in the list, so the f
 - Tested here: panel core, auth, API, supervisor (start/stop/crash/force-kill/update/restart), Ship launch args, config
   persistence, UI via headless Chromium (`pytest`, 15 tests).
 - Verified on a real desktop (Docker, Arch): image builds; SteamCMD anonymous download; `TSRDedicated.exe` is a **32-bit**
-  exe and runs under `wine32` (win32 prefix); the server binds UDP 7777/7778 and shows up in the in-game public list once ports are forwarded.
-- Not yet verified: joining from outside the LAN; running on Unraid; whether the panel's Steam login (`steamcmd +login`) is
-  actually required for the server to list (it was done before the server listed, so this is not isolated);
-  `UPDATE_ON_START`-style unattended restarts; the published ghcr image.
+  exe and runs under `wine32` (win32 prefix); the server binds UDP 7777/7778, appears in the public in-game list once ports are
+  forwarded, and **a client on a different network (phone hotspot) joined with no errors**.
+- **No Steam account is needed.** The server logs on to Steam anonymously, so the panel's optional `steam_login` action is not required for
+  The Ship (it was run once during testing; the server listing does not depend on it).
+- Not yet verified: running on Unraid; the published ghcr image from CI; password-protected join; long-running stability.
 
 ## Dev
 `pip install -r requirements-dev.txt && pytest -q` then `PANEL_PASSWORD=devpassword PANEL_DATA=./data python -m panel.main`.
