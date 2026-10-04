@@ -74,3 +74,20 @@ async def test_restart(sup):
     await sup.restart()
     assert sup.status()["pid"] != pid
     await sup.stop()
+
+
+async def test_update_reports_progress_then_clears(tmp_path):
+    from tests.conftest import FakeModule
+    m = FakeModule(tmp_path / "c", tmp_path)
+    s = Supervisor(m)
+    seen = []
+    orig = m.install
+
+    async def spy(log):
+        await orig(log)
+        seen.append(dict(s.progress))
+
+    m.install = spy
+    await s.update()
+    assert seen == [{"pct": 50.0, "phase": "Downloading"}]
+    assert s.progress is None and s.status()["progress"] is None

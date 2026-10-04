@@ -51,3 +51,22 @@ def test_find_wine_prefers_available_binary_and_errors_clearly(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda c: None)
     with pytest.raises(RuntimeError, match="wine not found"):
         TheShip._find_wine()
+
+
+async def test_steamcmd_progress_is_parsed_and_kept_out_of_the_log(tmp_path):
+    import stat
+    fake = tmp_path / "steamcmd.sh"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "printf '[ 40%%] Downloading update (1 of 2 KB)...\\n'\n"
+        "printf 'Update state (0x61) downloading, progress: 12.50 (100 / 800)\\r'\n"
+        "printf 'Update state (0x5) verifying install, progress: 99.00 (790 / 800)\\r\\n'\n"
+        "echo \"Success! App '443050' fully installed.\"\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    m.steamcmd = str(fake)
+    progress, logs = [], []
+    m.on_progress = lambda pct, phase: progress.append((pct, phase))
+    await m.install(logs.append)
+    assert progress == [(40.0, "Updating SteamCMD"), (12.5, "Downloading"), (99.0, "Verifying")]
+    assert any("Success!" in l for l in logs) and not any("Update state" in l for l in logs)

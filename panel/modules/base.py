@@ -19,6 +19,7 @@ class Port:
     end: int
     proto: str  # "tcp", "udp" or "tcp+udp"
     note: str = ""
+    required: bool = True  # False = forwarded in some setups but not proven necessary
 
 
 @dataclass
@@ -31,6 +32,7 @@ class LaunchSpec:
 class GameModule:
     id: str = ""
     name: str = ""
+    description: str = ""
     ports: list[Port] = []
     # Editable config files, relative to the module's config dir.
     config_files: list[str] = []
@@ -38,6 +40,8 @@ class GameModule:
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
         self.server_dir = server_dir
+        # Set by the supervisor while install() runs; modules call it as (percent 0-100 or None, phase text).
+        self.on_progress: Callable[[float | None, str], None] = lambda pct, phase: None
 
     async def install(self, log: LogFn) -> None:
         """Install or update the game server files. Must stream progress to log."""

@@ -9,10 +9,8 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import auth
-from .modules import load_module
-from .modules.base import GameModule
-from .supervisor import Supervisor
+from . import auth, netcheck
+from .manager import ServerManager
 
 STATIC = Path(__file__).parent / "static"
 
@@ -21,23 +19,24 @@ STATIC = Path(__file__).parent / "static"
 class Settings:
     password: str
     data_dir: Path
-    module_id: str = "theship"
+    module_id: str | None = None   # legacy single-game default (PANEL_MODULE); seeds the first server
+    demo: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
         pw = os.environ.get("PANEL_PASSWORD", "")
         if len(pw) < 8:
             raise SystemExit("PANEL_PASSWORD must be set (min 8 chars)")
-        return cls(pw, Path(os.environ.get("PANEL_DATA", "/data")), os.environ.get("PANEL_MODULE", "theship"))
+        return cls(pw, Path(os.environ.get("PANEL_DATA", "/data")), os.environ.get("PANEL_MODULE") or None,
+                   os.environ.get("PANEL_DEMO") == "1")
 
 
-def create_app(settings: Settings, module: GameModule | None = None) -> FastAPI:
-    module = module or load_module(settings.module_id, settings.data_dir / "config", settings.data_dir / "server")
-    sup = Supervisor(module)
+def create_app(settings: Settings, manager: ServerManager | None = None) -> FastAPI:
+    mgr = manager or ServerManager(settings.data_dir, settings.demo, settings.module_id)
     secret = auth.load_secret(settings.data_dir)
     limiter = auth.LoginLimiter()
     app = FastAPI(title="gameserver-panel", docs_url=None, redoc_url=None)
-    app.state.supervisor = sup
+    app.state.manager = mgr
 
     def require_auth(request: Request) -> None:
         if not auth.valid_token(secret, request.cookies.get(auth.COOKIE)):
@@ -45,6 +44,13 @@ def create_app(settings: Settings, module: GameModule | None = None) -> FastAPI:
 
     protected = [Depends(require_auth)]
 
+    def server(sid: str):
+        try:
+            return mgr.get(sid)
+        except KeyError:
+            raise HTTPException(404, "no such server")
+
+    # ---- auth ----------------------------------------------------------
     @app.post("/api/login")
     async def login(request: Request, response: Response, body: dict):
         who = request.client.host if request.client else "?"
@@ -62,72 +68,95 @@ def create_app(settings: Settings, module: GameModule | None = None) -> FastAPI:
         response.delete_cookie(auth.COOKIE)
         return {"ok": True}
 
-    @app.get("/api/module", dependencies=protected)
-    async def get_module():
-        return module.describe()
+    # ---- servers & catalogue -------------------------------------------
+    @app.get("/api/servers", dependencies=protected)
+    async def list_servers():
+        return {"servers": mgr.list()}
 
-    @app.get("/api/status", dependencies=protected)
-    async def status():
-        return sup.status()
+    @app.get("/api/games", dependencies=protected)
+    async def games():
+        return {"games": mgr.available()}
 
-    async def control(fn):
+    @app.post("/api/servers", dependencies=protected)
+    async def add_server(body: dict):
         try:
-            await fn()
+            return mgr.add(str(body.get("module", ""))).summary()
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.delete("/api/servers/{sid}", dependencies=protected)
+    async def remove_server(sid: str):
+        server(sid)
+        await mgr.remove(sid)
+        return {"ok": True, "note": "Game files were kept on disk."}
+
+    # ---- one server ----------------------------------------------------
+    @app.get("/api/servers/{sid}", dependencies=protected)
+    async def detail(sid: str):
+        s = server(sid)
+        return {**s.summary(), **s.module.describe()}
+
+    @app.get("/api/servers/{sid}/status", dependencies=protected)
+    async def status(sid: str):
+        return server(sid).supervisor.status()
+
+    @app.get("/api/servers/{sid}/ports", dependencies=protected)
+    async def ports(sid: str):
+        return {"ports": netcheck.port_status(server(sid).module.ports)}
+
+    async def control(sid: str, name: str):
+        sup = server(sid).supervisor
+        try:
+            await getattr(sup, name)()
         except RuntimeError as e:
             raise HTTPException(409, str(e))
         return sup.status()
 
-    @app.post("/api/start", dependencies=protected)
-    async def start():
-        return await control(sup.start)
+    for _name in ("start", "stop", "restart", "update"):
+        def _make(name: str):
+            async def handler(sid: str):
+                return await control(sid, name)
+            return handler
+        app.post(f"/api/servers/{{sid}}/{_name}", dependencies=protected)(_make(_name))
 
-    @app.post("/api/stop", dependencies=protected)
-    async def stop():
-        return await control(sup.stop)
+    @app.get("/api/servers/{sid}/logs", dependencies=protected)
+    async def logs(sid: str, n: int = 200):
+        return {"lines": server(sid).supervisor.tail(max(1, min(n, 2000)))}
 
-    @app.post("/api/restart", dependencies=protected)
-    async def restart():
-        return await control(sup.restart)
+    @app.get("/api/servers/{sid}/logs/stream", dependencies=protected)
+    async def logs_stream(sid: str):
+        sup = server(sid).supervisor
 
-    @app.post("/api/update", dependencies=protected)
-    async def update():
-        return await control(sup.update)
-
-    @app.get("/api/logs", dependencies=protected)
-    async def logs(n: int = 200):
-        return {"lines": sup.tail(max(1, min(n, 2000)))}
-
-    @app.get("/api/logs/stream", dependencies=protected)
-    async def logs_stream():
         async def gen():
             async for line in sup.follow():
                 yield "data: " + line.replace("\n", " ") + "\n\n"
         return StreamingResponse(gen(), media_type="text/event-stream")
 
-    def cfg_path(name: str) -> Path:
-        if name not in module.config_files:  # allow-list, so no path traversal
+    def cfg_path(sid: str, name: str) -> Path:
+        mod = server(sid).module
+        if name not in mod.config_files:  # allow-list, so no path traversal
             raise HTTPException(404, "unknown config file")
-        return module.config_dir / name
+        return mod.config_dir / name
 
-    @app.get("/api/config/{name}", dependencies=protected)
-    async def get_config(name: str):
-        p = cfg_path(name)
+    @app.get("/api/servers/{sid}/config/{name}", dependencies=protected)
+    async def get_config(sid: str, name: str):
+        p = cfg_path(sid, name)
         return {"name": name, "content": p.read_text(errors="replace") if p.exists() else ""}
 
-    @app.put("/api/config/{name}", dependencies=protected)
-    async def put_config(name: str, body: dict):
-        p = cfg_path(name)
+    @app.put("/api/servers/{sid}/config/{name}", dependencies=protected)
+    async def put_config(sid: str, name: str, body: dict):
+        p = cfg_path(sid, name)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(str(body.get("content", "")))
         return {"ok": True, "note": "restart the server to apply"}
 
-    @app.post("/api/actions/{name}", dependencies=protected)
-    async def action(name: str, body: dict):
-        fn = module.actions().get(name)
+    @app.post("/api/servers/{sid}/actions/{name}", dependencies=protected)
+    async def action(sid: str, name: str, body: dict):
+        fn = server(sid).module.actions().get(name)
         if not fn:
             raise HTTPException(404, "unknown action")
         try:
-            return await fn(body, sup.log)
+            return await fn(body, server(sid).supervisor.log)
         except ValueError as e:
             raise HTTPException(400, str(e))
 

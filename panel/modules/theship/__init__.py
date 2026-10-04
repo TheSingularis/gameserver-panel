@@ -18,6 +18,10 @@ from ..base import GameModule, LaunchSpec, LogFn, Port
 SERVER_APP_ID = "443050"
 GAME_APP_ID = "383790"  # steam_appid.txt must stay this
 EXE = "TSRDedicated.exe"
+STATE_RE = re.compile(r"Update state \(0x[0-9a-f]+\) ([a-z ]+), progress: ([\d.]+)")
+SELF_UPDATE_RE = re.compile(r"\[\s*(\d+)%\]\s+(Downloading|Extracting|Installing)")
+PHASES = {"downloading": "Downloading", "verifying update": "Verifying", "verifying install": "Verifying",
+          "committing": "Finishing", "reconfiguring": "Preparing", "preallocating": "Preparing"}
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{2,64}$")
 GUARD_RE = re.compile(r"^[A-Za-z0-9]{0,10}$")
 
@@ -25,9 +29,11 @@ GUARD_RE = re.compile(r"^[A-Za-z0-9]{0,10}$")
 class TheShip(GameModule):
     id = "theship"
     name = "The Ship: Remasted"
+    description = "Murder-mystery hunt on a cruise ship. Dedicated server with a public listing."
     ports = [
-        Port(7776, 7778, "tcp+udp", "game traffic (default game port 7777, set in server.cfg)"),
-        Port(443, 443, "tcp+udp", "used by the server per community docs"),
+        Port(7777, 7778, "udp", "game and query traffic (verified: forwarding these made the server public)"),
+        Port(7776, 7778, "tcp", "forwarded in the verified setup; not proven necessary", required=False),
+        Port(443, 443, "tcp+udp", "named in community docs; not forwarded and the server still listed", required=False),
     ]
 
     def __init__(self, config_dir: Path, server_dir: Path):
@@ -48,13 +54,32 @@ class TheShip(GameModule):
     def is_installed(self) -> bool:
         return (self.server_dir / EXE).is_file()
 
+    def _progress_from(self, line: str) -> None:
+        m = STATE_RE.search(line)
+        if m:
+            self.on_progress(float(m.group(2)), PHASES.get(m.group(1).strip(), m.group(1).strip().capitalize()))
+            return
+        m = SELF_UPDATE_RE.search(line)
+        if m:
+            self.on_progress(float(m.group(1)), "Updating SteamCMD")
+
     async def _run(self, argv: list[str], log: LogFn, env: dict | None = None) -> int:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             env={**os.environ, **(env or {})})
         assert proc.stdout
-        async for raw in proc.stdout:
-            log(raw.decode(errors="replace"))
+        # steamcmd redraws progress with bare \r, so split on both \r and \n.
+        buf = ""
+        while chunk := await proc.stdout.read(4096):
+            buf += chunk.decode(errors="replace")
+            *done, buf = re.split(r"[\r\n]+", buf)
+            for line in done:
+                if line:
+                    self._progress_from(line)
+                    if not STATE_RE.search(line):  # keep the log readable: progress goes to the bar
+                        log(line)
+        if buf:
+            log(buf)
         return await proc.wait()
 
     async def install(self, log: LogFn) -> None:

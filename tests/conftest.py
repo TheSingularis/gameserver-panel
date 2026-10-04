@@ -1,12 +1,13 @@
 import sys
 from pathlib import Path
 
+from panel.modules import ModuleInfo
 from panel.modules.base import GameModule, LaunchSpec, Port
 
 
 class FakeModule(GameModule):
     """Stand-in game: prints a line then sleeps. Proves the panel core is game-agnostic."""
-    id, name = "fake", "Fake"
+    id, name, description = "fake", "Fake", "A fake game"
     ports = [Port(1000, 1001, "udp")]
     config_files = ["fake.cfg"]
 
@@ -19,6 +20,7 @@ class FakeModule(GameModule):
     async def install(self, log):
         self.installs += 1
         log("installing")
+        self.on_progress(50.0, "Downloading")
         self.installed = True
 
     def launch_spec(self):
@@ -30,3 +32,9 @@ class FakeModule(GameModule):
                 raise ValueError("bad")
             return {"echo": params}
         return {"echo": echo}
+
+
+FAKE_CATALOG = {
+    "fake": ModuleInfo("fake", "Fake", "A fake game", ("Test",), lambda c, s: FakeModule(c, s)),
+    "soon": ModuleInfo("soon", "Soon Game", "Not built yet"),
+}

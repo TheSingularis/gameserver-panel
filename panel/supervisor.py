@@ -24,6 +24,7 @@ class Supervisor:
         self.state = STOPPED
         self.started_at: float | None = None
         self.exit_code: int | None = None
+        self.progress: dict | None = None  # {"pct": float | None, "phase": str} while installing
         self._proc: asyncio.subprocess.Process | None = None
         self._reader: asyncio.Task | None = None
         self._lines: collections.deque[str] = collections.deque(maxlen=max_lines)
@@ -54,8 +55,12 @@ class Supervisor:
     # ---- state ---------------------------------------------------------
     def status(self) -> dict:
         up = int(time.time() - self.started_at) if self.state == RUNNING and self.started_at else None
-        return {"state": self.state, "pid": self._proc.pid if self._proc and self.state == RUNNING else None,
+        return {"state": self.state, "progress": self.progress, "pid": self._proc.pid if self._proc and self.state == RUNNING else None,
                 "uptime_s": up, "exit_code": self.exit_code, "installed": self.module.is_installed()}
+
+    def _set_progress(self, pct: float | None, phase: str) -> None:
+        if self.state == INSTALLING:
+            self.progress = {"pct": None if pct is None else round(max(0.0, min(100.0, pct)), 1), "phase": phase}
 
     # ---- control -------------------------------------------------------
     async def start(self) -> None:
@@ -121,12 +126,14 @@ class Supervisor:
             was_running = self.state == RUNNING
             await self._stop_locked()
             self.state = INSTALLING
+            self.progress = {"pct": None, "phase": "Starting"}
+            self.module.on_progress = self._set_progress
             try:
                 await self.module.install(self.log)
             except Exception as e:
                 self.log(f"[panel] update failed: {e}")
-                self.state = STOPPED
+                self.state, self.progress = STOPPED, None
                 raise
-            self.state = STOPPED
+            self.state, self.progress = STOPPED, None
             if restart_after and was_running:
                 await self._start_locked()
