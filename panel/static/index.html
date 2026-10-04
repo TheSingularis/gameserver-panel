@@ -217,12 +217,14 @@ a.btn.primary { color: var(--accent-ink); }
       <div class="eyebrow">Game Server Panel</div>
       <h1>Welcome back</h1>
     </div>
-    <div class="field">
+    <a class="btn primary" id="ssoBtn" href="/auth/login" hidden>Sign in with SSO</a>
+    <div class="muted" id="ssoOr" hidden style="text-align:center;font-size:13px">or use the admin password</div>
+    <div class="field" id="pwField">
       <label for="pw">Admin password</label>
       <input class="input" id="pw" type="password" autocomplete="current-password" required autofocus>
     </div>
     <div class="err" id="loginErr" role="alert"></div>
-    <button class="btn primary" type="submit">Log in</button>
+    <button class="btn primary" type="submit" id="pwBtn">Log in</button>
   </form>
 </section>
 
@@ -409,7 +411,18 @@ $("#themeBtn").onclick = () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]
 applyTheme(theme);
 
 /* ---------- login ---------- */
-function showLogin() { stopAll(); $("#app").hidden = true; $("#login").hidden = false; $("#pw").focus(); }
+async function showLogin() {
+  stopAll(); $("#app").hidden = true; $("#login").hidden = false;
+  try {
+    const o = await (await fetch("/api/auth")).json();
+    $("#ssoBtn").hidden = !o.oidc; if (o.oidc) $("#ssoBtn").textContent = "Sign in with " + o.oidc.name;
+    for (const id of ["pwField", "pwBtn"]) $("#" + id).hidden = !o.password;
+    $("#ssoOr").hidden = !(o.oidc && o.password);
+  } catch (_) {}
+  const q = new URLSearchParams(location.search).get("sso_error");
+  if (q) { $("#loginErr").textContent = q; history.replaceState(null, "", location.pathname + location.hash); }
+  if (!$("#pwField").hidden) $("#pw").focus();
+}
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault(); $("#loginErr").textContent = "";
   try { await api("POST", "/api/login", { password: $("#pw").value }); $("#pw").value = ""; boot(); }

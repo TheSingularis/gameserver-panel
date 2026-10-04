@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, netcheck
 from .manager import ServerManager
+from .oidc import STATE_COOKIE, STATE_TTL, Oidc, OidcConfig, OidcError
 
 STATIC = Path(__file__).parent / "static"
+log = logging.getLogger("uvicorn.error")  # shows up in the container log
 
 
 @dataclass
@@ -22,20 +26,24 @@ class Settings:
     data_dir: Path
     module_id: str | None = None   # legacy single-game default (PANEL_MODULE); seeds the first server
     demo: bool = False
+    oidc: OidcConfig | None = None   # OIDC_* env; when set, PANEL_PASSWORD becomes optional
 
     @classmethod
     def from_env(cls) -> "Settings":
-        pw = os.environ.get("PANEL_PASSWORD", "")
-        if len(pw) < 8:
-            raise SystemExit("PANEL_PASSWORD must be set (min 8 chars)")
+        pw, oidc = os.environ.get("PANEL_PASSWORD", ""), OidcConfig.from_env()
+        if pw and len(pw) < 8:
+            raise SystemExit("PANEL_PASSWORD must be at least 8 characters")
+        if not pw and not oidc:
+            raise SystemExit("Set PANEL_PASSWORD (min 8 chars) and/or the OIDC_* variables")
         return cls(pw, Path(os.environ.get("PANEL_DATA", "/data")), os.environ.get("PANEL_MODULE") or None,
-                   os.environ.get("PANEL_DEMO") == "1")
+                   os.environ.get("PANEL_DEMO") == "1", oidc)
 
 
-def create_app(settings: Settings, manager: ServerManager | None = None) -> FastAPI:
+def create_app(settings: Settings, manager: ServerManager | None = None, oidc: Oidc | None = None) -> FastAPI:
     mgr = manager or ServerManager(settings.data_dir, settings.demo, settings.module_id)
     secret = auth.load_secret(settings.data_dir)
     limiter = auth.LoginLimiter()
+    sso = oidc or (Oidc(settings.oidc, secret) if settings.oidc else None)
     app = FastAPI(title="gameserver-panel", docs_url=None, redoc_url=None)
     app.state.manager = mgr
 
@@ -52,17 +60,61 @@ def create_app(settings: Settings, manager: ServerManager | None = None) -> Fast
             raise HTTPException(404, "no such server")
 
     # ---- auth ----------------------------------------------------------
+    def start_session(response: Response, secure: bool = False) -> None:
+        response.set_cookie(auth.COOKIE, auth.make_token(secret), httponly=True, secure=secure,
+                            samesite="strict", max_age=auth.TTL)
+
+    @app.get("/api/auth")
+    async def auth_options():
+        return {"password": bool(settings.password), "oidc": {"name": sso.cfg.name} if sso else None}
+
     @app.post("/api/login")
     async def login(request: Request, response: Response, body: dict):
+        if not settings.password:
+            raise HTTPException(403, "password login is disabled")
         who = request.client.host if request.client else "?"
         if limiter.blocked(who):
             raise HTTPException(429, "too many attempts, wait a minute")
         if not hmac.compare_digest(str(body.get("password", "")).encode(), settings.password.encode()):
             limiter.fail(who)
             raise HTTPException(401, "wrong password")
-        response.set_cookie(auth.COOKIE, auth.make_token(secret), httponly=True,
-                            samesite="strict", max_age=auth.TTL)
+        start_session(response)
         return {"ok": True}
+
+    # ---- OpenID Connect sign-in (only when OIDC_* is configured) ----------
+    def sso_error(msg: str) -> RedirectResponse:
+        r = RedirectResponse("/?" + urlencode({"sso_error": msg}), status_code=303)
+        r.delete_cookie(STATE_COOKIE)
+        return r
+
+    @app.get("/auth/login")
+    async def sso_login():
+        if not sso:
+            raise HTTPException(404, "OIDC is not configured")
+        try:
+            url, state = await sso.begin()
+        except OidcError as e:
+            return sso_error(str(e))
+        r = RedirectResponse(url, status_code=303)
+        # Lax, not Strict: the cookie must come back on the redirect from the provider.
+        r.set_cookie(STATE_COOKIE, state, httponly=True, samesite="lax", secure=sso.cfg.secure_cookies, max_age=STATE_TTL)
+        return r
+
+    @app.get("/auth/callback")
+    async def sso_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+        if not sso:
+            raise HTTPException(404, "OIDC is not configured")
+        if error:
+            return sso_error("The provider reported an error: " + error[:80])
+        try:
+            who = await sso.finish(code, state, request.cookies.get(STATE_COOKIE))
+        except OidcError as e:
+            return sso_error(str(e))
+        log.info("OIDC login: %s", who)
+        r = RedirectResponse("/", status_code=303)
+        r.delete_cookie(STATE_COOKIE)
+        start_session(r, sso.cfg.secure_cookies)
+        return r
 
     @app.post("/api/logout")
     async def logout(response: Response):

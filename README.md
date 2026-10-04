@@ -19,6 +19,22 @@ folder + one line in `panel/modules/__init__.py`.
 4. Servers can be renamed any time (**Rename** next to the title). Game icons come from Steam's CDN, or from `panel/static/icons/<module>.png|jpg|svg` if you drop one there (works offline).
    Port conflicts between servers of the same game are not handled yet: give each its own ports in its config.
 
+## Sign in with Keycloak (OIDC)
+Optional. In Keycloak create a client with **Standard flow** on, and **Valid redirect URI** `<OIDC_PUBLIC_URL>/auth/callback`
+(use a confidential client with a secret, or a public client; PKCE is always used). Then set on the container:
+
+| Variable | Meaning |
+|---|---|
+| `OIDC_ISSUER` | realm URL, e.g. `https://keycloak.lan/realms/home` (enables OIDC) |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | the client; the secret is optional for a public client |
+| `OIDC_PUBLIC_URL` | how your browser reaches the panel, e.g. `https://panel.lan` |
+| `OIDC_ALLOWED_USERS` / `OIDC_ALLOWED_GROUPS` | who may log in (usernames or emails / groups or realm roles). **One is required**, otherwise the panel refuses to start. `OIDC_ALLOW_ANY=1` admits every user of the realm |
+| `OIDC_NAME` | label on the sign-in button (default `SSO`) |
+
+Groups need a *Group Membership* mapper on the client (token claim name `groups`); realm roles work without one.
+`PANEL_PASSWORD` may then be left out; if both are set the login page offers both. The ID token signature is verified against the realm's keys.
+Not yet verified against a real Keycloak (the tests use an in-process fake provider).
+
 ## Networking: The Ship: Remasted
 Forward on your router to the host's LAN IP (give it a static IP / DHCP reservation). Use host networking on Linux, or `-p` mappings on Docker Desktop.
 

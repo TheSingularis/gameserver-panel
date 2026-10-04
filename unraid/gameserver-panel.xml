@@ -9,6 +9,12 @@
   <Overview>Web control panel (start/stop/update/configure/console) for game servers. First module: The Ship: Remasted. Keep the panel port LAN-only; only forward the game ports.</Overview>
   <Category>GameServers: Tools:</Category>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/gameserver-panel" Mode="rw" Description="Server files, configs, wine prefix" Type="Path" Display="always" Required="true">/mnt/user/appdata/gameserver-panel</Config>
-  <Config Name="Panel password" Target="PANEL_PASSWORD" Default="" Description="Admin password (min 8 chars)" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Panel password" Target="PANEL_PASSWORD" Default="" Description="Admin password (min 8 chars). Optional once OIDC is set up." Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="Panel port" Target="PANEL_PORT" Default="8080" Description="Web UI port (host networking). LAN only." Type="Variable" Display="always" Required="true">8080</Config>
+  <Config Name="OIDC issuer" Target="OIDC_ISSUER" Default="" Description="Optional SSO, e.g. https://keycloak.lan/realms/home" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="OIDC client id" Target="OIDC_CLIENT_ID" Default="" Description="Client id registered in Keycloak" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="OIDC client secret" Target="OIDC_CLIENT_SECRET" Default="" Description="Leave empty for a public client (PKCE only)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="OIDC public URL" Target="OIDC_PUBLIC_URL" Default="" Description="How your browser reaches the panel, e.g. http://tower:8080. Redirect URI is this + /auth/callback" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="OIDC allowed users" Target="OIDC_ALLOWED_USERS" Default="" Description="Comma list of usernames/emails allowed in" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="OIDC allowed groups" Target="OIDC_ALLOWED_GROUPS" Default="" Description="Comma list of groups/realm roles allowed in" Type="Variable" Display="advanced" Required="false"></Config>
 </Container>
