@@ -1,0 +1,13 @@
+# Local development: builds the image from this checkout instead of pulling it.
+#   docker compose -f docker-compose.dev.yml up -d --build
+services:
+  gameserver-panel:
+    build: .
+    container_name: gameserver-panel-dev
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      PANEL_PASSWORD: change-me-please
+      PANEL_PORT: "8080"
+    volumes:
+      - ./data:/data
