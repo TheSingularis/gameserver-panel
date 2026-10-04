@@ -78,8 +78,8 @@ class TheShip(GameModule):
 
     @staticmethod
     def _find_wine() -> str:
-        # Debian ships the wrapper as `wine`; the 64-bit binary lives in /usr/lib/wine and is not on PATH.
-        for cand in ("wine64", "wine", "/usr/lib/wine/wine64"):
+        # TSRDedicated.exe is 32-bit, so use Debian's `wine` wrapper (needs wine32:i386); wine64 is only a fallback.
+        for cand in ("wine", "wine64", "/usr/lib/wine/wine64"):
             found = shutil.which(cand)
             if found:
                 return found
@@ -94,7 +94,7 @@ class TheShip(GameModule):
                 "+serverid", self.server_id, "+servercfg", self.cfg_name,
                 "-logFile", f"{self.server_id}/tsrds_output.txt"]
         return LaunchSpec(argv, self.server_dir, {
-            "WINEPREFIX": str(self.config_dir / "wine"), "WINEARCH": "win64", "WINEDEBUG": "-all"})
+            "WINEPREFIX": str(self.config_dir / "wine32"), "WINEARCH": "win32", "WINEDEBUG": "-all"})
 
     # -- steam login (UNVERIFIED that this satisfies the game's SteamAPI_Init) ----
     def actions(self):

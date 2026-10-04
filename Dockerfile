@@ -6,12 +6,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     STEAMCMD=/opt/steamcmd/steamcmd.sh \
     PYTHONUNBUFFERED=1
 
-# steamcmd is 32-bit; the Ship server is a 64-bit Windows exe run via Wine + virtual display.
+# steamcmd is 32-bit; TSRDedicated.exe is a 32-bit Windows exe run via Wine (win32 prefix) + virtual display.
 RUN dpkg --add-architecture i386 \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl lib32gcc-s1 lib32stdc++6 libc6-i386 \
-      wine wine64 libwine libwine:i386 xvfb xauth procps tini \
+      wine wine32:i386 wine64 libwine libwine:i386 xvfb xauth procps tini \
       python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && (command -v wine64 || command -v wine || test -x /usr/lib/wine/wine64)
