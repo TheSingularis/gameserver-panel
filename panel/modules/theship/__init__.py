@@ -37,6 +37,13 @@ class TheShip(GameModule):
         self.config_files = [self.cfg_name]
         self.steamcmd = os.environ.get("STEAMCMD", "/opt/steamcmd/steamcmd.sh")
 
+    def _home_env(self) -> dict[str, str]:
+        # steamcmd keeps its login cache under $HOME/Steam; put it on the persistent volume so a
+        # recreated container stays logged in.
+        home = self.config_dir / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        return {"HOME": str(home)}
+
     # -- install ----------------------------------------------------------
     def is_installed(self) -> bool:
         return (self.server_dir / EXE).is_file()
@@ -55,7 +62,7 @@ class TheShip(GameModule):
         code = await self._run([
             self.steamcmd, "+@sSteamCmdForcePlatformType", "windows",
             "+force_install_dir", str(self.server_dir), "+login", "anonymous",
-            "+app_update", SERVER_APP_ID, "validate", "+quit"], log)
+            "+app_update", SERVER_APP_ID, "validate", "+quit"], log, self._home_env())
         if code != 0:
             raise RuntimeError(f"steamcmd exited with {code}")
         (self.server_dir / "steam_appid.txt").write_text(GAME_APP_ID + "\n")
@@ -94,7 +101,7 @@ class TheShip(GameModule):
                 "+serverid", self.server_id, "+servercfg", self.cfg_name,
                 "-logFile", f"{self.server_id}/tsrds_output.txt"]
         return LaunchSpec(argv, self.server_dir, {
-            "WINEPREFIX": str(self.config_dir / "wine32"), "WINEARCH": "win32", "WINEDEBUG": "-all"})
+            **self._home_env(), "WINEPREFIX": str(self.config_dir / "wine32"), "WINEARCH": "win32", "WINEDEBUG": "-all"})
 
     # -- steam login (UNVERIFIED that this satisfies the game's SteamAPI_Init) ----
     def actions(self):
@@ -109,5 +116,5 @@ class TheShip(GameModule):
         argv = [self.steamcmd, "+login", user, password] + ([guard] if guard else []) + ["+quit"]
         # Never log argv: it contains the password.
         log(f"[steam] logging in as {user} (credentials cached by steamcmd on success)")
-        code = await self._run(argv, lambda l: log(l.replace(password, "********")))
+        code = await self._run(argv, lambda l: log(l.replace(password, "********")), self._home_env())
         return {"ok": code == 0, "exit_code": code}

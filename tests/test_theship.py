@@ -11,6 +11,7 @@ def test_launch_spec_matches_steamdb_args(tmp_path, monkeypatch):
     assert spec.argv[-8:] == ["-batchmode", "-nographics", "+serverid", "TSRDS_1",
                               "+servercfg", "server.cfg", "-logFile", "TSRDS_1/tsrds_output.txt"]
     assert (m.server_dir / "steam_appid.txt").read_text().strip() == "383790"
+    assert spec.env["HOME"] == str(m.config_dir / "home")  # steam login cache lives on the volume
 
 
 def test_config_seeded_from_shipped_then_persisted(tmp_path, monkeypatch):
