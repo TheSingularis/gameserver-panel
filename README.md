@@ -12,7 +12,8 @@ folder + one line in `panel/modules/__init__.py`.
 
 ## Run (Unraid or any Docker host)
 1. Unraid: copy `unraid/gameserver-panel.xml` to `/boot/config/plugins/dockerMan/templates-user/`, then Docker > Add Container.
-   Elsewhere: set `PANEL_PASSWORD` in `docker-compose.yml`, `docker compose up -d --build`.
+   Elsewhere (or Unraid with the Compose Manager plugin): set `PANEL_PASSWORD` in `docker-compose.yml` and `docker compose up -d`; data lives in `PANEL_DATA_DIR` (default `/mnt/user/appdata/gameserver-panel`).
+   The container carries the label `com.centurylinklabs.watchtower.enable=true`, so Watchtower updates it from ghcr whenever CI publishes a new image. To build locally instead: `docker compose -f docker-compose.dev.yml up -d --build`.
 2. Open `http://<host>:8080`, log in, go to **Add game**, pick The Ship and name the server, then press **Install** (downloads ~700 MB) and **Start**.
    An existing single-game install (files in `/data/server` + `/data/config`) is adopted automatically.
 3. First start creates `server.cfg`; edit name/password/port on the **Config** tab and restart.
