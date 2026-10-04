@@ -19,6 +19,7 @@ class ModuleInfo:
     description: str
     tags: tuple[str, ...] = ()
     factory: Callable[[Path, Path], GameModule] | None = None  # None = coming soon
+    icon: str | None = None  # remote URL; a bundled panel/static/icons/<id>.png|jpg|svg takes precedence
 
     @property
     def status(self) -> str:
@@ -39,7 +40,8 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
     items = [
         ModuleInfo("theship", "The Ship: Remasted",
                    "Murder-mystery hunt on a cruise ship. Dedicated server with a public listing; runs the Windows build under Wine.",
-                   ("Steam", "Windows via Wine", "UDP 7777"), _ship),
+                   ("Steam", "Windows via Wine", "UDP 7777"), _ship,
+                   "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/443050/capsule_231x87.jpg"),
         ModuleInfo("minecraft", "Minecraft: Java Edition",
                    "Vanilla and modded Java servers with world backups.",
                    ("Java", "TCP 25565")),

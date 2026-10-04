@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import auth, netcheck
 from .manager import ServerManager
@@ -80,9 +81,14 @@ def create_app(settings: Settings, manager: ServerManager | None = None) -> Fast
     @app.post("/api/servers", dependencies=protected)
     async def add_server(body: dict):
         try:
-            return mgr.add(str(body.get("module", ""))).summary()
+            return mgr.add(str(body.get("module", "")), body.get("name")).summary()
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    @app.patch("/api/servers/{sid}", dependencies=protected)
+    async def rename_server(sid: str, body: dict):
+        server(sid)
+        return mgr.rename(sid, str(body.get("name", ""))).summary()
 
     @app.delete("/api/servers/{sid}", dependencies=protected)
     async def remove_server(sid: str):
@@ -94,7 +100,7 @@ def create_app(settings: Settings, manager: ServerManager | None = None) -> Fast
     @app.get("/api/servers/{sid}", dependencies=protected)
     async def detail(sid: str):
         s = server(sid)
-        return {**s.summary(), **s.module.describe()}
+        return {**s.module.describe(), **s.summary()}
 
     @app.get("/api/servers/{sid}/status", dependencies=protected)
     async def status(sid: str):
@@ -164,4 +170,5 @@ def create_app(settings: Settings, manager: ServerManager | None = None) -> Fast
     async def index():
         return FileResponse(STATIC / "index.html")
 
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

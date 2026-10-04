@@ -2,7 +2,8 @@
 
 One container = a small web control panel **plus** the game server it manages, as separate processes
 (the UI never blocks on the game, and a game crash never takes the UI down).
-UI: start / stop / restart / update (SteamCMD), edit config, live console, and module-specific actions.
+UI: a sidebar of named game servers (several per game is fine), each with install / start / stop / restart / update with a progress bar,
+live console, config editor, port check and module-specific actions.
 
 Each game is a **module** (`panel/modules/<game>/`) implementing `GameModule`
 (install, launch command, ports, editable configs, extra actions). The core knows nothing about any game; things like
@@ -12,8 +13,11 @@ folder + one line in `panel/modules/__init__.py`.
 ## Run (Unraid or any Docker host)
 1. Unraid: copy `unraid/gameserver-panel.xml` to `/boot/config/plugins/dockerMan/templates-user/`, then Docker > Add Container.
    Elsewhere: set `PANEL_PASSWORD` in `docker-compose.yml`, `docker compose up -d --build`.
-2. Open `http://<host>:8080`, log in, press **Update** (downloads the server, ~700 MB), then **Start**.
-3. First start creates `server.cfg`; edit name/password/port in the UI and restart.
+2. Open `http://<host>:8080`, log in, go to **Add game**, pick The Ship and name the server, then press **Install** (downloads ~700 MB) and **Start**.
+   An existing single-game install (files in `/data/server` + `/data/config`) is adopted automatically.
+3. First start creates `server.cfg`; edit name/password/port on the **Config** tab and restart.
+4. Servers can be renamed any time (**Rename** next to the title). Game icons come from Steam's CDN, or from `panel/static/icons/<module>.png|jpg|svg` if you drop one there (works offline).
+   Port conflicts between servers of the same game are not handled yet: give each its own ports in its config.
 
 ## Networking: The Ship: Remasted
 Forward on your router to the host's LAN IP (give it a static IP / DHCP reservation). Use host networking on Linux, or `-p` mappings on Docker Desktop.
@@ -42,3 +46,4 @@ Without the forwards the server ran but did **not** appear in the list, so the f
 
 ## Dev
 `pip install -r requirements-dev.txt && pytest -q` then `PANEL_PASSWORD=devpassword PANEL_DATA=./data python -m panel.main`.
+Add `PANEL_DEMO=1` to get a fake "Demo game" that installs in seconds, handy for trying the UI.

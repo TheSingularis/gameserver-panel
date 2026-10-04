@@ -43,14 +43,18 @@ async def test_wrong_password_and_lockout(client):
 async def test_catalogue_add_and_remove(client):
     await client.post("/api/login", json={"password": PW})
     games = {g["id"]: g for g in (await client.get("/api/games")).json()["games"]}
-    assert games["fake"]["status"] == "available" and not games["fake"]["added"]
+    assert games["fake"]["status"] == "available" and games["fake"]["servers"] == 0
     assert games["soon"]["status"] == "soon"
     assert (await client.get("/api/servers")).json()["servers"] == []
     assert (await client.post("/api/servers", json={"module": "soon"})).status_code == 409  # coming soon
     assert (await client.post("/api/servers", json={"module": "nope"})).status_code == 409
     assert (await client.post("/api/servers", json={"module": "fake"})).status_code == 200
-    assert (await client.post("/api/servers", json={"module": "fake"})).status_code == 409  # already added
-    assert (await client.get("/api/servers")).json()["servers"][0]["state"] == "stopped"
+    assert (await client.post("/api/servers", json={"module": "fake", "name": "Second one"})).status_code == 200  # several per game
+    rows = (await client.get("/api/servers")).json()["servers"]
+    assert [r["id"] for r in rows] == ["fake", "second-one"] and rows[1]["name"] == "Second one"
+    assert rows[0]["state"] == "stopped" and rows[0]["game"] == "Fake"
+    r = await client.patch("/api/servers/second-one", json={"name": "  Friday   night  "})
+    assert r.json()["name"] == "Friday night" and r.json()["id"] == "second-one"
     assert (await client.delete("/api/servers/fake")).status_code == 200
     assert (await client.get("/api/servers/fake/status")).status_code == 404
 
@@ -87,8 +91,10 @@ async def test_module_actions(ready):
 async def test_ports_and_detail(ready):
     rows = (await ready.get("/api/servers/fake/ports")).json()["ports"]
     assert [r["port"] for r in rows] == [1000, 1001] and rows[0]["proto"] == "udp"
+    await ready.patch("/api/servers/fake", json={"name": "Mine"})
     d = (await ready.get("/api/servers/fake")).json()
-    assert d["name"] == "Fake" and d["config_files"] == ["fake.cfg"] and "echo" in d["actions"]
+    assert d["name"] == "Mine" and d["game"] == "Fake"
+    assert d["config_files"] == ["fake.cfg"] and "echo" in d["actions"]
 
 
 async def test_tampered_cookie_rejected(client):

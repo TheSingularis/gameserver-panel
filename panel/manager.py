@@ -1,7 +1,8 @@
 """Holds the set of game servers the panel manages and persists it to <data>/servers.json.
 
-One server per game module for now (ids are module ids). Existing single-game installs keep their
-files where they are: a legacy /data/config + /data/server layout is adopted in place.
+A server is a named instance of a game module; several can exist for one game. The id is a slug fixed
+at creation (it names the folder), the display name can be changed any time. Existing single-game
+installs keep their files where they are: a legacy /data/config + /data/server layout is adopted in place.
 """
 from __future__ import annotations
 
@@ -16,20 +17,32 @@ from .modules.base import GameModule
 from .supervisor import Supervisor
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+STATIC_ICONS = Path(__file__).parent / "static" / "icons"
+
+
+def slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:28] or "server"
+
+
+def clean_name(name: object, fallback: str) -> str:
+    name = " ".join(str(name or "").split())[:40]
+    return name or fallback
 
 
 @dataclass
 class Server:
     id: str
+    name: str
     module_id: str
+    icon: str | None
     config_dir: Path
     server_dir: Path
     module: GameModule
     supervisor: Supervisor
 
     def summary(self) -> dict:
-        return {"id": self.id, "module": self.module_id, "name": self.module.name,
-                "description": self.module.description, **self.supervisor.status()}
+        return {"id": self.id, "module": self.module_id, "name": self.name, "game": self.module.name,
+                "icon": self.icon, "description": self.module.description, **self.supervisor.status()}
 
 
 class ServerManager:
@@ -52,16 +65,18 @@ class ServerManager:
             if not seed_module and (self.data_dir / "server" / "TSRDedicated.exe").exists():
                 seed_module = "theship"
             if seed_module and seed_module in self.catalog and self.catalog[seed_module].factory:
-                entries.append({"id": seed_module, "module": seed_module, "config": "config", "server": "server"})
+                entries.append({"id": seed_module, "name": self.catalog[seed_module].name, "module": seed_module,
+                                "config": "config", "server": "server"})
             self._save(entries)
         for e in entries:
             info = self.catalog.get(e["module"])
             if info and info.factory:
-                self._instantiate(e["id"], info, self.data_dir / e["config"], self.data_dir / e["server"])
+                self._instantiate(e["id"], clean_name(e.get("name"), info.name), info,
+                                  self.data_dir / e["config"], self.data_dir / e["server"])
 
     def _entries(self) -> list[dict]:
         rel = lambda p: str(p.relative_to(self.data_dir))
-        return [{"id": s.id, "module": s.module_id, "config": rel(s.config_dir), "server": rel(s.server_dir)}
+        return [{"id": s.id, "name": s.name, "module": s.module_id, "config": rel(s.config_dir), "server": rel(s.server_dir)}
                 for s in self.servers.values()]
 
     def _save(self, entries: list[dict] | None = None) -> None:
@@ -69,9 +84,16 @@ class ServerManager:
         tmp.write_text(json.dumps(self._entries() if entries is None else entries, indent=2))
         os.replace(tmp, self._file)
 
-    def _instantiate(self, sid: str, info: ModuleInfo, config_dir: Path, server_dir: Path) -> Server:
+    def icon_for(self, info: ModuleInfo) -> str | None:
+        """A bundled icon wins (works offline); otherwise the module's remote URL, if any."""
+        for ext in ("png", "jpg", "svg"):
+            if (STATIC_ICONS / f"{info.id}.{ext}").exists():
+                return f"/static/icons/{info.id}.{ext}"
+        return info.icon
+
+    def _instantiate(self, sid: str, name: str, info: ModuleInfo, config_dir: Path, server_dir: Path) -> Server:
         module = info.factory(config_dir, server_dir)
-        srv = Server(sid, info.id, config_dir, server_dir, module, Supervisor(module))
+        srv = Server(sid, name, info.id, self.icon_for(info), config_dir, server_dir, module, Supervisor(module))
         self.servers[sid] = srv
         return srv
 
@@ -82,16 +104,28 @@ class ServerManager:
         except KeyError:
             raise KeyError(f"no such server: {sid}")
 
-    def add(self, module_id: str) -> Server:
+    def _new_id(self, base: str) -> str:
+        sid, n = base, 2
+        while sid in self.servers or (self.data_dir / "servers" / sid).exists():
+            sid, n = f"{base[:26]}-{n}", n + 1
+        return sid
+
+    def add(self, module_id: str, name: str | None = None) -> Server:
         info = self.catalog.get(module_id)
         if not info:
             raise ValueError("unknown game")
         if not info.factory:
             raise ValueError(f"{info.name} is not available yet")
-        if module_id in self.servers:
-            raise ValueError(f"{info.name} is already added")
-        base = self.data_dir / "servers" / module_id
-        srv = self._instantiate(module_id, info, base / "config", base / "server")
+        name = clean_name(name, info.name)
+        sid = self._new_id(slugify(name))
+        base = self.data_dir / "servers" / sid
+        srv = self._instantiate(sid, name, info, base / "config", base / "server")
+        self._save()
+        return srv
+
+    def rename(self, sid: str, name: str) -> Server:
+        srv = self.get(sid)
+        srv.name = clean_name(name, srv.name)
         self._save()
         return srv
 
@@ -106,4 +140,5 @@ class ServerManager:
 
     def available(self) -> list[dict]:
         return [{"id": m.id, "name": m.name, "description": m.description, "tags": list(m.tags),
-                 "status": m.status, "added": m.id in self.servers} for m in self.catalog.values()]
+                 "status": m.status, "icon": self.icon_for(m),
+                 "servers": sum(1 for x in self.servers.values() if x.module_id == m.id)} for m in self.catalog.values()]

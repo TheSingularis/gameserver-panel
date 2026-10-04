@@ -5,209 +5,208 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Game Server Panel</title>
 <style>
-/* Layout: sticky bar; at >=1000px a fixed-width control column (status, ports, advanced)
-   beside a wide work column (ship's log, config). Single column below that.
-   Palette: sea-mist neutrals with a deep teal accent; status uses real navigation-light
-   colours (starboard green = running, port red = crashed, masthead amber = busy).
-   No web fonts: this runs on a home LAN, possibly offline. */
+/* Layout: left sidebar listing every game server (icon, name, status lamp), page header with the
+   main actions, a full-width progress strip, then sub-tabs (Console, Config, Network, Advanced).
+   Below 860px the sidebar becomes a scrolling strip across the top. Dark-first graphite palette
+   with an ice-blue accent; status colours follow navigation lights (green running, red crashed,
+   amber busy). No web fonts: this runs on a home LAN, possibly offline. */
 :root {
-  --bg: #eaeff2;
-  --surface: #ffffff;
-  --surface-2: #f3f6f8;
-  --ink: #0f212a;
-  --muted: #566b76;
-  --line: #d3dde3;
-  --accent: #0b5d73;
-  --accent-ink: #ffffff;
-  --accent-soft: #dcecf1;
-  --ok: #17824a;
-  --bad: #c9302a;
-  --warn: #a96f00;
-  --log-bg: #0a1a21;
-  --log-ink: #cde0e7;
-  --log-dim: #6f8994;
-  --log-cmd: #6fc8de;
-  --log-bad: #ff8077;
-  --log-warn: #f0c24f;
-  --shadow: 0 1px 2px rgba(15, 33, 42, .06), 0 6px 20px rgba(15, 33, 42, .05);
+  --bg: #11141a; --side: #0d1015; --surface: #181c24; --surface-2: #0d1015; --ink: #e6eaf0; --muted: #8a94a6;
+  --line: #262c37; --accent: #7cc4ff; --accent-ink: #07121c; --accent-soft: rgba(124, 196, 255, .14); --sel: #1b2230;
+  --ok: #3fcf8e; --bad: #ff6f65; --warn: #ecb83c;
+  --log-bg: #090c10; --log-ink: #c3cad6; --log-dim: #5d6678; --log-cmd: #7cc4ff; --log-bad: #ff8077; --log-warn: #f0c24f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .22);
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --radius: 12px;
+  --radius: 10px; color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0a151a; --surface: #112028; --surface-2: #0e1b21; --ink: #e3eef2; --muted: #8aa2ad;
-    --line: #223840; --accent: #52b6cf; --accent-ink: #04222b; --accent-soft: #14323c;
-    --ok: #3fcf8e; --bad: #ff6f65; --warn: #ecb83c;
-    --log-bg: #060f13; --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
-    color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef1f5; --side: #ffffff; --surface: #ffffff; --surface-2: #f3f5f8; --ink: #151b25; --muted: #5a6577;
+    --line: #d9dfe7; --accent: #0b6fb8; --accent-ink: #ffffff; --accent-soft: rgba(11, 111, 184, .1); --sel: #e8eef6;
+    --ok: #17824a; --bad: #c9302a; --warn: #a96f00; --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 6px 20px rgba(20, 30, 50, .05);
+    --log-bg: #0d1219; color-scheme: light;
   }
 }
-:root[data-theme="dark"] {
-  --bg: #0a151a; --surface: #112028; --surface-2: #0e1b21; --ink: #e3eef2; --muted: #8aa2ad;
-  --line: #223840; --accent: #52b6cf; --accent-ink: #04222b; --accent-soft: #14323c;
-  --ok: #3fcf8e; --bad: #ff6f65; --warn: #ecb83c;
-  --log-bg: #060f13; --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
-  color-scheme: dark;
+:root[data-theme="light"] {
+  --bg: #eef1f5; --side: #ffffff; --surface: #ffffff; --surface-2: #f3f5f8; --ink: #151b25; --muted: #5a6577;
+  --line: #d9dfe7; --accent: #0b6fb8; --accent-ink: #ffffff; --accent-soft: rgba(11, 111, 184, .1); --sel: #e8eef6;
+  --ok: #17824a; --bad: #c9302a; --warn: #a96f00; --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 6px 20px rgba(20, 30, 50, .05);
+  --log-bg: #0d1219; color-scheme: light;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+body { background: var(--bg); color: var(--ink); font: 14.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
 button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 h1, h2, h3 { margin: 0; line-height: 1.2; text-wrap: balance; }
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
-.eyebrow { font-size: 11.5px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.grow, .spacer { flex: 1; }
 
 /* ---- buttons ---- */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px;
-  border-radius: 9px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600;
-  transition: background .12s, border-color .12s, transform .05s; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 15px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600;
+  transition: background .12s, border-color .12s, transform .05s; white-space: nowrap; text-decoration: none; }
 .btn:hover:not(:disabled) { border-color: var(--accent); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+a.btn { color: var(--ink); }
+a.btn.primary { color: var(--accent-ink); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
 .btn.danger { color: var(--bad); }
 .btn.danger.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
 .btn.armed:not(.danger) { background: var(--accent-soft); border-color: var(--accent); }
-.btn.small { min-height: 32px; padding: 0 11px; font-size: 13px; }
+.btn.small { min-height: 30px; padding: 0 11px; font-size: 13px; }
 .btn.ghost { background: transparent; }
-.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+.spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } * { transition: none !important; } }
 
-/* ---- nav tabs ---- */
-.nav { max-width: 1280px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
-.nav::-webkit-scrollbar { display: none; }
-.nav a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 2px solid transparent; color: var(--muted);
-  font-weight: 650; text-decoration: none; white-space: nowrap; }
-.nav a:hover { color: var(--ink); }
-.nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+/* ---- status dots and lamps ---- */
 .dot { --c: var(--muted); width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
-.dot[data-s="running"] { --c: var(--ok); } .dot[data-s="crashed"] { --c: var(--bad); }
+.dot[data-s="running"] { --c: var(--ok); box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 60%, transparent); }
+.dot[data-s="crashed"] { --c: var(--bad); }
 .dot[data-s="installing"], .dot[data-s="stopping"] { --c: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 .dot[data-s="new"] { background: transparent; border: 1.5px dashed var(--muted); }
+@keyframes pulse { 50% { opacity: .45; } }
+
+/* ---- game icon tile (Steam capsule art, or a coloured initial when there is none) ---- */
+.ico { --h: 210; width: var(--w, 32px); height: var(--w, 32px); border-radius: 7px; flex: none; overflow: hidden; display: grid; place-items: center;
+  background: hsl(var(--h) 45% 32%); color: #fff; font-weight: 750; font-size: calc(var(--w, 32px) * .45); position: relative; }
+.ico img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ico.wide { width: calc(var(--w, 32px) * 2.66); }
+
+/* ---- shell ---- */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+.side { background: var(--side); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 3px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: -.01em; padding: 2px 12px 14px; }
+.brand svg { color: var(--accent); flex: none; }
+.side .lab { padding: 14px 12px 4px; }
+.side a, .side .sbtn { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; color: var(--muted);
+  text-decoration: none; font-weight: 600; background: none; border: 0; cursor: pointer; text-align: left; width: 100%; min-width: 0; }
+.side a:hover, .side .sbtn:hover { color: var(--ink); background: var(--surface); }
+.side a[aria-current="page"] { background: var(--sel); color: var(--ink); }
+.side a .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.side .foot { margin-top: auto; padding-top: 12px; display: grid; gap: 3px; }
+.main { padding: 24px 28px 56px; min-width: 0; max-width: 1180px; width: 100%; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .side { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; height: auto; flex-direction: row; align-items: center; overflow-x: auto;
+    border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; gap: 4px; scrollbar-width: none; }
+  .side::-webkit-scrollbar { display: none; }
+  .brand, .side .lab { display: none; }
+  .side a, .side .sbtn { width: auto; flex: none; white-space: nowrap; }
+  .side .foot { margin: 0 0 0 auto; padding: 0; display: flex; flex: none; }
+  .main { padding: 18px 16px 48px; }
+}
 
 /* ---- pages ---- */
-.page { max-width: 1280px; margin: 0 auto; padding: 22px 16px 56px; }
-.page-h { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-.page-h h1 { font-size: 24px; letter-spacing: -.02em; }
-.page-h p { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
-.cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
-.gcard { padding: 18px; display: grid; gap: 14px; align-content: start; }
-.gcard h3 { font-size: 17px; letter-spacing: -.01em; }
-.gcard p { margin: 0; color: var(--muted); font-size: 14px; }
+.page-h { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-h h1 { font-size: 24px; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.page-h p { margin: 4px 0 0; color: var(--muted); max-width: 64ch; }
+.crumb { font-size: 12.5px; color: var(--log-dim); margin-bottom: 2px; }
+.title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.state-chip { display: inline-flex; gap: 7px; align-items: center; padding: 3px 11px 3px 9px; border-radius: 99px; background: var(--accent-soft);
+  font-size: 12.5px; font-weight: 700; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.gcard { padding: 16px; display: grid; gap: 12px; align-content: start; }
+.gcard h3 { font-size: 16px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.gcard p { margin: 0; color: var(--muted); font-size: 13.5px; }
 .gcard .top { display: flex; align-items: center; gap: 10px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { padding: 2px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12px; color: var(--muted); font-weight: 600; }
+.chip { padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .chip.soon { background: transparent; border-style: dashed; }
 .empty { padding: 36px 20px; text-align: center; display: grid; gap: 12px; justify-items: center; }
 .empty h2 { font-size: 20px; }
 .empty p { margin: 0; color: var(--muted); max-width: 46ch; }
-.grow { flex: 1; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---- add game: one row per game ---- */
+.rows .grow-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.rows .grow-row:last-child { border-bottom: 0; }
+.grow-row h3 { font-size: 15px; }
+.grow-row p { margin: 2px 0 7px; color: var(--muted); }
+.create { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 0 2px; }
+.create .input { flex: 1 1 220px; max-width: 360px; }
+@media (max-width: 560px) { .grow-row { grid-template-columns: auto minmax(0, 1fr); } .grow-row > .act { grid-column: 1 / -1; } }
 
 /* ---- progress ---- */
+.strip { padding: 14px 16px; display: grid; gap: 8px; margin-bottom: 14px; }
 .prog { display: grid; gap: 6px; }
 .prog-top { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
 .prog-top b { color: var(--ink); font-variant-numeric: tabular-nums; font-family: var(--mono); font-weight: 650; }
-.track { height: 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.track { height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
 .fill { height: 100%; width: var(--p, 0%); background: var(--accent); border-radius: 99px; transition: width .35s ease; }
 .track.indet .fill { width: 38%; animation: slide 1.1s ease-in-out infinite alternate; }
 @keyframes slide { from { margin-left: 0; } to { margin-left: 62%; } }
+.facts { display: flex; gap: 8px 28px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.facts b { color: var(--ink); font-weight: 650; }
+.notice { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13.5px; margin-bottom: 14px; }
+
+/* ---- sub-tabs ---- */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
+.tabs button { padding: 9px 14px; color: var(--muted); font-weight: 650; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 
 /* ---- login ---- */
 .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
-.login { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; box-shadow: var(--shadow); display: grid; gap: 16px; }
+.login { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 28px; box-shadow: var(--shadow); display: grid; gap: 16px; }
 .login h1 { font-size: 22px; }
 .field { display: grid; gap: 6px; }
 .field label { font-size: 13px; font-weight: 600; }
-.input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.input { width: 100%; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
 .input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .err { color: var(--bad); font-size: 13px; min-height: 1.3em; }
 
-/* ---- app shell ---- */
-.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-.bar-in { max-width: 1280px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; }
-.brand svg { color: var(--accent); }
-.module-chip { margin-left: 4px; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 650; }
-.spacer { flex: 1; }
-.srv { max-width: 1280px; margin: 0 auto; padding: 0 16px 48px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 1000px) { .srv { grid-template-columns: 380px minmax(0, 1fr); } }
-.col { display: grid; gap: 16px; min-width: 0; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
-.card-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px 0; }
-.card-b { padding: 14px 18px 18px; }
-
-/* ---- status ---- */
-.status { padding: 20px 18px 18px; display: grid; gap: 18px; }
-.status-top { display: flex; align-items: center; gap: 14px; }
-.lamp { --c: var(--muted); width: 16px; height: 16px; border-radius: 50%; background: var(--c); flex: none;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), 0 0 14px color-mix(in srgb, var(--c) 60%, transparent); }
-.lamp[data-s="running"] { --c: var(--ok); }
-.lamp[data-s="crashed"] { --c: var(--bad); }
-.lamp[data-s="installing"], .lamp[data-s="stopping"] { --c: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
-.lamp[data-s="stopped"] { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 14%, transparent); }
-@keyframes pulse { 50% { opacity: .45; } }
-.state-word { font-size: 26px; font-weight: 750; letter-spacing: -.02em; }
-.state-sub { color: var(--muted); font-size: 13.5px; }
-.controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.controls .btn:first-child { grid-column: 1 / -1; min-height: 46px; font-size: 16px; }
-.notice { padding: 10px 12px; border-radius: 9px; background: var(--accent-soft); color: var(--ink); font-size: 13.5px; }
-
 /* ---- ports ---- */
 .ports { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.ports th { text-align: left; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 650; padding: 0 8px 8px 0; }
+.ports th { text-align: left; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 8px 8px 0; }
 .ports td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
 .ports .num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 650; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
 .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .pill.ok { color: var(--ok); } .pill.ok i { background: var(--ok); }
 .pill.bad { color: var(--bad); } .pill.bad i { background: var(--bad); }
-.hint { font-size: 12.5px; color: var(--muted); margin-top: 12px; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; }
+.pad { padding: 16px 18px; }
+.xscroll { overflow-x: auto; }
 
-/* ---- log ---- */
-.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 12px 18px 0; }
-.tools .input { min-height: 34px; flex: 1 1 140px; max-width: 280px; font-size: 13.5px; }
+/* ---- console ---- */
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.tools .input { min-height: 32px; flex: 1 1 140px; max-width: 280px; font-size: 13.5px; }
 .seg { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
-.log { margin: 14px 18px 18px; height: clamp(300px, 52vh, 560px); overflow: auto; background: var(--log-bg); color: var(--log-ink);
-  border-radius: 9px; padding: 12px 14px; font: 12.5px/1.55 var(--mono); }
+.log { height: clamp(300px, 52vh, 600px); overflow: auto; background: var(--log-bg); color: var(--log-ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 12px 14px; font: 12.5px/1.6 var(--mono); }
 .log div { white-space: pre-wrap; overflow-wrap: anywhere; }
 .log .cmd { color: var(--log-cmd); } .log .panel { color: var(--log-dim); font-style: italic; }
 .log .bad { color: var(--log-bad); } .log .warn { color: var(--log-warn); } .log .dim { color: var(--log-dim); }
 .log:empty::before { content: "Nothing logged yet. Start the server to see its output here."; color: var(--log-dim); }
 
 /* ---- config ---- */
-.editor { display: block; width: 100%; min-height: 260px; height: 320px; resize: vertical; padding: 12px 14px; border: 1px solid var(--line);
-  border-radius: 9px; background: var(--surface-2); font: 13px/1.55 var(--mono); tab-size: 4; white-space: pre; overflow: auto; }
+.editor { display: block; width: 100%; min-height: 260px; height: 340px; resize: vertical; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface-2); font: 13px/1.55 var(--mono); tab-size: 4; white-space: pre; overflow: auto; }
 .editor:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .dirty { color: var(--warn); font-size: 13px; font-weight: 600; }
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
-.tab { border: 0; background: transparent; padding: 6px 10px; border-radius: 7px; cursor: pointer; font-weight: 600; color: var(--muted); }
-.tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
-
-details.adv summary { cursor: pointer; padding: 14px 18px; font-weight: 650; list-style: none; display: flex; align-items: center; gap: 8px; }
-details.adv summary::-webkit-details-marker { display: none; }
-details.adv summary::after { content: "+"; margin-left: auto; color: var(--muted); font-size: 18px; }
-details.adv[open] summary::after { content: "\2212"; }
-.adv-b { padding: 0 18px 18px; display: grid; gap: 10px; }
+.ctabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.ctab { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-weight: 600; color: var(--muted); }
+.ctab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.adv-b { display: grid; gap: 12px; }
+.adv-b + .adv-b { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 
 /* ---- toasts ---- */
 #toasts { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 20; width: min(360px, calc(100vw - 32px)); }
 .toast { padding: 11px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; box-shadow: var(--shadow); animation: in .18s ease-out; }
 .toast.bad { background: var(--bad); color: #fff; }
 @keyframes in { from { transform: translateY(8px); opacity: 0; } }
-
-@media (max-width: 520px) {
-  .module-chip { display: none; }
-  .state-word { font-size: 23px; }
-  .ports .note { display: none; }
-}
+@media (max-width: 520px) { .ports .note { display: none; } .page-h h1 { font-size: 21px; } }
 </style>
 </head>
 <body>
@@ -227,123 +226,126 @@ details.adv[open] summary::after { content: "\2212"; }
   </form>
 </section>
 
-<div id="app" hidden>
-  <header class="bar">
-    <div class="bar-in">
-      <div class="brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18c2 0 2-1.5 4-1.5S8 18 10 18s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5"/><path d="M4 14l1.5-6h13L20 14"/><path d="M12 8V3h4"/></svg>
-        <span>Game Server Panel</span>
-      </div>
-      <span class="spacer"></span>
-      <button class="btn small ghost" id="themeBtn" type="button" title="Switch theme">Auto</button>
-      <button class="btn small ghost" id="logoutBtn" type="button">Log out</button>
+<div id="app" class="app" hidden>
+  <nav class="side" aria-label="Games">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18c2 0 2-1.5 4-1.5S8 18 10 18s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5"/><path d="M4 14l1.5-6h13L20 14"/><path d="M12 8V3h4"/></svg>
+      <span>Game Panel</span>
     </div>
-    <nav class="nav" id="nav" aria-label="Pages"></nav>
-  </header>
-
-  <!-- Overview -->
-  <section class="page" id="pgOverview" hidden>
-    <div class="page-h"><div><h1>Overview</h1><p>Every game server this panel manages, at a glance.</p></div></div>
-    <div class="cards" id="ovCards"></div>
-  </section>
-
-  <!-- Add game -->
-  <section class="page" id="pgAdd" hidden>
-    <div class="page-h"><div><h1>Add a game</h1><p>Pick a game to set up. Each one gets its own tab with controls, console and config. Game files are downloaded when you press Install on its tab.</p></div></div>
-    <div class="cards" id="addCards"></div>
-  </section>
-
-  <!-- One game server -->
-  <div id="pgServer" hidden>
-    <div class="page" style="padding-bottom:18px">
-      <div class="page-h" style="margin:0"><div><h1 id="srvName"></h1><p id="srvDesc"></p></div></div>
+    <div id="nav" style="display:contents"></div>
+    <div class="foot">
+      <button class="sbtn" id="themeBtn" type="button" title="Switch theme">Theme: Auto</button>
+      <button class="sbtn" id="logoutBtn" type="button">Log out</button>
     </div>
-    <div class="srv">
-      <div class="col">
-        <section class="card status" aria-live="polite">
-          <div class="status-top">
-            <span class="lamp" id="lamp" data-s="stopped"></span>
-            <div>
-              <div class="state-word" id="stateWord">Checking&hellip;</div>
-              <div class="state-sub" id="stateSub">&nbsp;</div>
-            </div>
-          </div>
-          <div class="prog" id="prog" hidden>
-            <div class="prog-top"><span id="progPhase"></span><b id="progPct"></b></div>
-            <div class="track" id="progTrack"><div class="fill"></div></div>
-          </div>
-          <div class="controls" id="controls">
-            <button class="btn primary" id="bInstall" type="button">Install game files</button>
-            <button class="btn primary" id="bStart" type="button">Start server</button>
-            <button class="btn danger" id="bStop" type="button">Stop</button>
-            <button class="btn" id="bRestart" type="button">Restart</button>
-            <button class="btn" id="bUpdate" type="button" style="grid-column:1 / -1">Check for updates</button>
-          </div>
-          <div class="notice" id="notice" hidden></div>
-        </section>
+  </nav>
 
-        <section class="card">
-          <div class="card-h"><h2 class="eyebrow">Ports to forward</h2></div>
-          <div class="card-b">
-            <table class="ports" id="ports">
-              <thead><tr><th>Port</th><th>Protocol</th><th>Needed</th><th>Server</th></tr></thead>
-              <tbody></tbody>
-            </table>
-            <p class="hint" id="portsHint"></p>
-          </div>
-        </section>
+  <main class="main">
+    <!-- Overview -->
+    <section id="pgOverview" hidden>
+      <div class="page-h"><div><h1>Overview</h1><p>Every game server this panel manages, at a glance.</p></div></div>
+      <div class="cards" id="ovCards"></div>
+    </section>
 
-        <section class="card" id="advCard">
-          <details class="adv">
-            <summary>Advanced</summary>
-            <div class="adv-b">
-              <div id="steamBox" hidden style="display:grid;gap:10px">
-                <h3 class="eyebrow">Steam sign-in</h3>
-                <p class="muted" style="margin:0;font-size:13.5px">Not needed for The Ship, which signs in to Steam anonymously. Kept for games that need an account. The password goes straight to SteamCMD and is not stored by the panel.</p>
-                <form class="field" id="steamForm" style="gap:8px">
-                  <input class="input" id="su" placeholder="Steam username" autocomplete="username" aria-label="Steam username">
-                  <input class="input" id="sp" type="password" placeholder="Password" autocomplete="current-password" aria-label="Steam password">
-                  <input class="input" id="sg" placeholder="Steam Guard code (if asked)" autocomplete="one-time-code" aria-label="Steam Guard code">
-                  <button class="btn" type="submit">Sign in with SteamCMD</button>
-                </form>
-              </div>
-              <h3 class="eyebrow">Remove from panel</h3>
-              <p class="muted" style="margin:0;font-size:13.5px">Stops the server and removes its tab. Downloaded game files and config stay on disk, so adding the game again picks them up.</p>
-              <div><button class="btn danger" id="bRemove" type="button">Remove this game</button></div>
-            </div>
-          </details>
-        </section>
+    <!-- Add game -->
+    <section id="pgAdd" hidden>
+      <div class="page-h"><div><h1>Add a game</h1><p>Pick a game and give the server a name. You can add the same game more than once, for example one server per group of friends. Game files are downloaded when you press Install.</p></div></div>
+      <div class="card rows" id="addRows"></div>
+    </section>
+
+    <!-- One game server -->
+    <section id="pgServer" hidden>
+      <div class="page-h">
+        <div style="min-width:0">
+          <div class="crumb" id="crumb"></div>
+          <div class="title-row">
+            <span id="srvIcon"></span>
+            <h1 id="srvName"></h1>
+            <form id="renameForm" class="row" hidden style="flex-wrap:nowrap"><input class="input" id="renameIn" maxlength="40" aria-label="Server name" style="width:min(260px,60vw)"><button class="btn small primary" type="submit">Save</button><button class="btn small ghost" type="button" id="renameCancel">Cancel</button></form>
+            <button class="btn small ghost" id="renameBtn" type="button" title="Rename this server">Rename</button>
+            <span class="state-chip" id="chip"><span class="dot" id="lamp" data-s="stopped"></span><span id="stateWord">Checking&hellip;</span></span>
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <div class="row" id="controls" aria-live="polite">
+          <button class="btn primary" id="bInstall" type="button">Install game files</button>
+          <button class="btn primary" id="bStart" type="button">Start server</button>
+          <button class="btn danger" id="bStop" type="button">Stop</button>
+          <button class="btn" id="bRestart" type="button">Restart</button>
+          <button class="btn ghost" id="bUpdate" type="button">Check for updates</button>
+        </div>
       </div>
 
-      <div class="col">
-        <section class="card">
-          <div class="card-h"><h2 class="eyebrow">Ship&rsquo;s log</h2><span class="spacer"></span>
-            <label class="seg"><input type="checkbox" id="follow" checked> Follow</label>
-          </div>
-          <div class="tools">
-            <input class="input" id="filter" type="search" placeholder="Filter log" aria-label="Filter log">
-            <button class="btn small" id="logCopy" type="button">Copy</button>
-            <button class="btn small" id="logClear" type="button">Clear view</button>
-          </div>
-          <div class="log" id="log" role="log" aria-label="Server console"></div>
-        </section>
+      <section class="card strip" id="prog" hidden aria-live="polite">
+        <div class="prog-top"><span id="progPhase"></span><b id="progPct"></b></div>
+        <div class="track" id="progTrack"><div class="fill"></div></div>
+      </section>
+      <div class="notice" id="notice" hidden>Installing downloads the game server files and verifies them. You can leave this page; it keeps going.</div>
+      <div class="facts" id="facts"></div>
 
-        <section class="card" id="cfgCard" hidden>
-          <div class="card-h"><h2 class="eyebrow">Server config</h2><span class="spacer"></span><div class="tabs" id="cfgTabs" role="tablist"></div></div>
-          <div class="card-b" style="display:grid;gap:12px">
-            <textarea class="editor" id="editor" spellcheck="false" aria-label="Config file contents"></textarea>
-            <div class="row">
-              <button class="btn primary" id="cfgSave" type="button">Save</button>
-              <button class="btn" id="cfgSaveRestart" type="button">Save &amp; restart</button>
-              <button class="btn ghost" id="cfgRevert" type="button">Revert</button>
-              <span class="dirty" id="dirty" hidden>Unsaved changes</span>
-            </div>
-            <p class="hint" style="margin:0">Changes apply the next time the server starts. &ldquo;Save &amp; restart&rdquo; does both.</p>
-          </div>
-        </section>
+      <div class="tabs" role="tablist" id="subtabs">
+        <button type="button" role="tab" data-tab="console">Console</button>
+        <button type="button" role="tab" data-tab="config" id="tabConfig">Config</button>
+        <button type="button" role="tab" data-tab="network">Network</button>
+        <button type="button" role="tab" data-tab="advanced">Advanced</button>
       </div>
-    </div>
-  </div>
+
+      <div id="tpConsole" data-panel="console">
+        <div class="tools">
+          <input class="input" id="filter" type="search" placeholder="Filter log" aria-label="Filter log">
+          <label class="seg"><input type="checkbox" id="follow" checked> Follow</label>
+          <span class="spacer"></span>
+          <button class="btn small" id="logCopy" type="button">Copy</button>
+          <button class="btn small" id="logClear" type="button">Clear view</button>
+        </div>
+        <div class="log" id="log" role="log" aria-label="Server console"></div>
+      </div>
+
+      <div id="tpConfig" data-panel="config" hidden>
+        <div class="card pad">
+          <div class="ctabs" id="cfgTabs" role="tablist"></div>
+          <textarea class="editor" id="editor" spellcheck="false" aria-label="Config file contents"></textarea>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="cfgSave" type="button">Save</button>
+            <button class="btn" id="cfgSaveRestart" type="button">Save &amp; restart</button>
+            <button class="btn ghost" id="cfgRevert" type="button">Revert</button>
+            <span class="dirty" id="dirty" hidden>Unsaved changes</span>
+          </div>
+          <p class="hint">Changes apply the next time the server starts. &ldquo;Save &amp; restart&rdquo; does both.</p>
+        </div>
+      </div>
+
+      <div id="tpNetwork" data-panel="network" hidden>
+        <div class="card pad">
+          <div class="eyebrow" style="margin-bottom:10px">Ports to forward</div>
+          <div class="xscroll"><table class="ports" id="ports">
+            <thead><tr><th>Port</th><th>Protocol</th><th>Needed</th><th>Server</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+          <p class="hint" id="portsHint"></p>
+        </div>
+      </div>
+
+      <div id="tpAdvanced" data-panel="advanced" hidden>
+        <div class="card pad">
+          <div class="adv-b" id="steamBox" hidden>
+            <h3 class="eyebrow">Steam sign-in</h3>
+            <p class="muted" style="margin:0;font-size:13.5px">Not needed for The Ship, which signs in to Steam anonymously. Kept for games that need an account. The password goes straight to SteamCMD and is not stored by the panel.</p>
+            <form class="field" id="steamForm" style="gap:8px;max-width:360px">
+              <input class="input" id="su" placeholder="Steam username" autocomplete="username" aria-label="Steam username">
+              <input class="input" id="sp" type="password" placeholder="Password" autocomplete="current-password" aria-label="Steam password">
+              <input class="input" id="sg" placeholder="Steam Guard code (if asked)" autocomplete="one-time-code" aria-label="Steam Guard code">
+              <button class="btn" type="submit">Sign in with SteamCMD</button>
+            </form>
+          </div>
+          <div class="adv-b">
+            <h3 class="eyebrow">Remove from panel</h3>
+            <p class="muted" style="margin:0;font-size:13.5px">Stops the server and removes it from the sidebar. Downloaded game files and config stay on disk.</p>
+            <div><button class="btn danger" id="bRemove" type="button">Remove this server</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 </div>
 <div id="toasts" aria-live="polite"></div>
 
@@ -354,7 +356,7 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
 };
-const S = { servers: [], games: [], route: "overview", sid: null, detail: null, cfgName: null, cfgOriginal: "", es: null, timers: [], srvTimers: [], pending: null };
+const S = { servers: [], games: [], route: "overview", sid: null, detail: null, tab: "console", portRows: [], cfgName: null, cfgOriginal: "", es: null, timers: [], srvTimers: [], pending: null };
 
 /* ---------- helpers ---------- */
 async function api(method, path, body) {
@@ -386,6 +388,13 @@ function fmtUp(sec) {
   if (m) return `${m}m ${String(s).padStart(2, "0")}s`;
   return `${s}s`;
 }
+/* Game icon: bundled/Steam image when there is one, else a coloured initial. wide = capsule shape. */
+function iconEl(url, name, w, wide) {
+  const hue = [...(name || "?")].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+  const t = el("span", { class: "ico" + (wide ? " wide" : ""), style: `--w:${w}px;--h:${hue}`, "aria-hidden": "true" }, (name || "?").trim().charAt(0).toUpperCase());
+  if (url) { const i = el("img", { src: url, alt: "", loading: "lazy", referrerpolicy: "no-referrer" }); i.onerror = () => i.remove(); t.append(i); }
+  return t;
+}
 const LABEL = { running: "Running", stopped: "Stopped", crashed: "Crashed", installing: "Installing", stopping: "Stopping" };
 const stateWord = (sv) => sv.state === "installing" && sv.installed ? "Updating" : sv.state === "stopped" && !sv.installed ? "Not installed" : (LABEL[sv.state] || sv.state);
 
@@ -393,7 +402,7 @@ const stateWord = (sv) => sv.state === "installing" && sv.installed ? "Updating"
 const THEMES = ["auto", "light", "dark"];
 function applyTheme(t) {
   if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); else document.documentElement.removeAttribute("data-theme");
-  $("#themeBtn").textContent = t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto";
+  $("#themeBtn").textContent = "Theme: " + (t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto");
 }
 let theme = THEMES.includes(store.get("gsp-theme")) ? store.get("gsp-theme") : "auto";
 $("#themeBtn").onclick = () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; store.set("gsp-theme", theme); applyTheme(theme); };
@@ -410,7 +419,6 @@ $("#logoutBtn").onclick = async () => { try { await api("POST", "/api/logout"); 
 
 /* ---------- progress bar ---------- */
 function renderProgress(box, phaseEl, pctEl, track, p) {
-  box.hidden = !p;
   if (!p) return;
   phaseEl.textContent = p.phase + "…";
   pctEl.textContent = p.pct == null ? "" : p.pct.toFixed(p.pct < 10 ? 1 : 0) + "%";
@@ -421,12 +429,13 @@ function renderProgress(box, phaseEl, pctEl, track, p) {
 /* ---------- navigation ---------- */
 function renderNav() {
   const nav = $("#nav"); nav.textContent = "";
-  const link = (id, label, dot) => {
-    const a = el("a", { href: "#" + id }, dot || null, label);
-    if (S.route === id) a.setAttribute("aria-current", "page"); nav.append(a);
+  const link = (id, label, lead) => {
+    const a = el("a", { href: "#" + id }, lead || null, el("span", { class: "nm", text: label }));
+    if (S.route === id) a.setAttribute("aria-current", "page"); nav.append(a); return a;
   };
   link("overview", "Overview");
-  for (const sv of S.servers) link(sv.id, sv.name, el("span", { class: "dot", "data-s": sv.state }));
+  nav.append(el("div", { class: "eyebrow lab", text: "Games" }));
+  for (const sv of S.servers) { const a = link(sv.id, sv.name, iconEl(sv.icon, sv.game, 22)); a.append(el("span", { class: "dot", "data-s": sv.state })); }
   link("add", "Add game", el("span", { class: "dot", "data-s": "new" }));
 }
 function parseRoute() {
@@ -450,9 +459,10 @@ window.addEventListener("hashchange", route);
 /* ---------- polling ---------- */
 async function pollServers() {
   try {
-    const before = S.servers.map((s) => s.id).join();
+    const sig = (l) => l.map((s) => s.id + "\u0001" + s.name).join();
+    const before = sig(S.servers);
     S.servers = (await api("GET", "/api/servers")).servers;
-    if (S.servers.map((s) => s.id).join() !== before) { renderNav(); if (!S.servers.some((s) => s.id === S.route) && S.route !== "add") return route(); }
+    if (sig(S.servers) !== before) { renderNav(); if (!S.servers.some((s) => s.id === S.route) && S.route !== "add") return route(); }
     else renderNavDots();
     if (S.route === "overview") renderOverview();
     if (S.sid) renderStatus();
@@ -472,15 +482,15 @@ function renderOverview() {
   if (!S.servers.length) {
     box.append(el("section", { class: "card empty", style: "grid-column:1/-1" },
       el("h2", { text: "No games yet" }),
-      el("p", { text: "Add your first game server to get started. You can run several side by side." }),
+      el("p", { text: "Add your first game server to get started. You can run several side by side, including more than one of the same game." }),
       el("a", { class: "btn primary", href: "#add", style: "text-decoration:none", text: "Add a game" })));
     return;
   }
   for (const sv of S.servers) {
     const running = sv.state === "running", busy = sv.state === "installing" || sv.state === "stopping";
     const card = el("section", { class: "card gcard" },
-      el("div", { class: "top" }, el("span", { class: "dot", "data-s": sv.state }), el("h3", { text: sv.name }), el("span", { class: "grow" }),
-        el("span", { class: "muted", style: "font-size:13px", text: stateWord(sv) })),
+      el("div", { class: "top" }, iconEl(sv.icon, sv.game, 34), el("div", { style: "min-width:0" }, el("h3", { text: sv.name }), el("div", { class: "muted", style: "font-size:12.5px", text: sv.game })), el("span", { class: "grow" }),
+        el("span", { class: "dot", "data-s": sv.state }), el("span", { class: "muted", style: "font-size:13px;white-space:nowrap", text: stateWord(sv) })),
       el("p", { text: running ? `Up ${fmtUp(sv.uptime_s || 0)}` : sv.description }));
     if (sv.progress) {
       const ph = el("span"), pc = el("b"), tr = el("div", { class: "track" }, el("div", { class: "fill" }));
@@ -503,25 +513,29 @@ function renderOverview() {
 /* ---------- add game ---------- */
 async function loadGames() {
   try { S.games = (await api("GET", "/api/games")).games; } catch (_) { return; }
-  const box = $("#addCards"); box.textContent = "";
+  const box = $("#addRows"); box.textContent = "";
   for (const g of S.games) {
-    const btn = el("button", { class: "btn small " + (g.status === "available" && !g.added ? "primary" : ""), type: "button" });
-    if (g.status === "soon") { btn.textContent = "Coming soon"; btn.disabled = true; }
-    else if (g.added) { btn.textContent = "Open"; btn.onclick = () => { location.hash = g.id; }; }
-    else {
-      btn.textContent = "Add to panel";
-      btn.onclick = async () => {
-        btn.disabled = true;
-        try { await api("POST", "/api/servers", { module: g.id }); toast(g.name + " added"); await pollServers(); location.hash = g.id; }
-        catch (e) { toast(e.message, true); btn.disabled = false; }
-      };
-    }
-    box.append(el("section", { class: "card gcard" },
-      el("div", { class: "top" }, el("h3", { text: g.name }), el("span", { class: "grow" }),
-        g.added ? el("span", { class: "pill ok" }, el("i"), "Added") : null),
-      el("p", { text: g.description }),
-      el("div", { class: "chips" }, ...g.tags.map((t) => el("span", { class: "chip", text: t })), g.status === "soon" ? el("span", { class: "chip soon", text: "Planned" }) : null),
-      el("div", {}, btn)));
+    const soon = g.status === "soon";
+    const create = el("form", { class: "create", hidden: "" });
+    const nameIn = el("input", { class: "input", maxlength: "40", "aria-label": "Server name" });
+    const go = el("button", { class: "btn primary small", type: "submit", text: "Create server" });
+    const cancel = el("button", { class: "btn ghost small", type: "button", text: "Cancel" });
+    create.append(nameIn, go, cancel);
+    const open = el("button", { class: "btn small primary", type: "button", text: g.servers ? "Add another" : "Add server" });
+    if (soon) { open.textContent = "Coming soon"; open.disabled = true; open.className = "btn small"; }
+    open.onclick = () => { nameIn.value = g.servers ? `${g.name} ${g.servers + 1}` : g.name; create.hidden = false; open.hidden = true; nameIn.focus(); nameIn.select(); };
+    cancel.onclick = () => { create.hidden = true; open.hidden = false; };
+    create.onsubmit = async (e) => {
+      e.preventDefault(); go.disabled = true;
+      try { const sv = await api("POST", "/api/servers", { module: g.id, name: nameIn.value }); toast(`${sv.name} added`); await pollServers(); location.hash = sv.id; }
+      catch (err) { toast(err.message, true); go.disabled = false; }
+    };
+    box.append(el("div", { class: "grow-row" },
+      iconEl(g.icon, g.name, 40, true),
+      el("div", { style: "min-width:0" }, el("h3", { text: g.name }), el("p", { text: g.description }),
+        el("div", { class: "chips" }, ...g.tags.map((t) => el("span", { class: "chip", text: t })),
+          g.servers ? el("span", { class: "chip", text: `${g.servers} added` }) : null, soon ? el("span", { class: "chip soon", text: "Planned" }) : null)),
+      el("div", { class: "act" }, open), create));
   }
 }
 
@@ -536,46 +550,79 @@ function tick(fn, ms, perServer) { const id = setInterval(() => { if (!document.
 
 async function openServer(sid) {
   if (S.sid === sid) return;
-  closeServer(); S.sid = sid; S.pending = null;
+  closeServer(); S.sid = sid; S.pending = null; lastState = null;
   let d; try { d = await api("GET", "/api/servers/" + sid); } catch (e) { toast(e.message, true); return; }
   S.detail = d;
   document.title = d.name + " · Game Server Panel";
-  $("#srvName").textContent = d.name; $("#srvDesc").textContent = d.description || "";
+  $("#crumb").textContent = "Games / " + d.game;
+  $("#srvIcon").replaceChildren(iconEl(d.icon, d.game, 32));
+  showName(d.name);
   $("#steamBox").hidden = !d.actions.includes("steam_login");
-  $("#cfgCard").hidden = !d.config_files.length;
+  $("#tabConfig").hidden = !d.config_files.length;
+  if (S.tab === "config" && !d.config_files.length) S.tab = "console";
+  setTab(S.tab);
   const tabs = $("#cfgTabs"); tabs.textContent = "";
-  for (const n of d.config_files) tabs.append(el("button", { class: "tab", type: "button", role: "tab", "data-name": n, text: n, onclick: () => openCfg(n) }));
+  for (const n of d.config_files) tabs.append(el("button", { class: "ctab", type: "button", role: "tab", "data-name": n, text: n, onclick: () => openCfg(n) }));
   S.cfgName = null; if (d.config_files.length) openCfg(d.config_files[0], true);
   $("#log").textContent = ""; lines = [];
-  renderStatus(); renderPorts([]);
+  renderStatus(); renderPorts([]); $("#renameForm").hidden = true; $("#renameBtn").hidden = false; $("#srvName").hidden = false;
   await Promise.all([loadTail(), refreshPorts()]);
   connectLog();
   tick(refreshPorts, 5000, true);
 }
 
+function setTab(t) {
+  S.tab = t;
+  document.querySelectorAll("#subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+  document.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== t; });
+  if (t === "console") { const b = $("#log"); if ($("#follow").checked) b.scrollTop = b.scrollHeight; }
+}
+document.querySelectorAll("#subtabs button").forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });
+
+/* rename in place */
+function showName(name) { $("#srvName").textContent = name; document.title = name + " · Game Server Panel"; }
+$("#renameBtn").onclick = () => { $("#srvName").hidden = true; $("#renameBtn").hidden = true; $("#renameForm").hidden = false; $("#renameIn").value = sv().name; $("#renameIn").focus(); $("#renameIn").select(); };
+const endRename = () => { $("#renameForm").hidden = true; $("#renameBtn").hidden = false; $("#srvName").hidden = false; };
+$("#renameCancel").onclick = endRename;
+$("#renameIn").onkeydown = (e) => { if (e.key === "Escape") endRename(); };
+$("#renameForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try { const r = await api("PATCH", "/api/servers/" + S.sid, { name: $("#renameIn").value }); showName(r.name); endRename(); await pollServers(); renderNav(); }
+  catch (err) { toast(err.message, true); }
+};
+
+function renderFacts(s) {
+  const need = S.portRows.filter((r) => r.required), f = $("#facts"); f.textContent = "";
+  const add = (k, v, cls) => f.append(el("span", {}, k + " ", el("b", { class: cls || "", text: v })));
+  add("Uptime", s.state === "running" ? fmtUp(s.uptime_s || 0) : "—");
+  if (need.length) {
+    const lo = Math.min(...need.map((r) => r.port)), hi = Math.max(...need.map((r) => r.port));
+    add("Game port", `${need[0].proto.toUpperCase()} ${lo === hi ? lo : lo + "–" + hi}`, "mono");
+    add("Listening", need.every((r) => r.listening) ? "yes" : "not yet");
+  }
+  if (s.state === "running" && s.pid) add("PID", String(s.pid), "mono");
+  if (s.state === "crashed") add("Exit code", String(s.exit_code), "mono");
+}
+
+let lastState = null;
 function renderStatus() {
   const s = sv(); if (!s) return;
+  if (lastState !== null && lastState !== s.state) setTimeout(refreshPorts, 1200);  // sockets appear shortly after the state flips
+  lastState = s.state;
   $("#lamp").dataset.s = s.state;
   $("#stateWord").textContent = stateWord(s);
-  let sub;
-  if (s.state === "running") sub = `Up ${fmtUp(s.uptime_s || 0)}` + (s.pid ? ` · pid ${s.pid}` : "");
-  else if (s.state === "crashed") sub = `Exited with code ${s.exit_code}. See the log.`;
-  else if (s.state === "installing") sub = s.installed ? "Checking and updating game files" : "Downloading the game server";
-  else if (s.state === "stopping") sub = "Waiting for the server to shut down";
-  else sub = s.installed ? "The server is not running." : "Game files are not installed yet.";
-  $("#stateSub").textContent = sub;
-  renderProgress($("#prog"), $("#progPhase"), $("#progPct"), $("#progTrack"), s.progress);
+  renderFacts(s);
+  $("#prog").hidden = !s.progress;
+  if (s.progress) renderProgress($("#prog"), $("#progPhase"), $("#progPct"), $("#progTrack"), s.progress);
 
   const busy = !!S.pending || s.state === "installing" || s.state === "stopping", running = s.state === "running";
-  show("bInstall", !s.installed); show("bStart", s.installed); show("bStop", s.installed); show("bRestart", s.installed); show("bUpdate", s.installed);
+  show("bInstall", !s.installed); show("bStart", s.installed && !running); show("bStop", s.installed); show("bRestart", s.installed); show("bUpdate", s.installed);
   btn("bInstall", "Install game files", busy, S.pending === "update" || s.state === "installing");
   btn("bStart", "Start server", busy || running, S.pending === "start");
   btn("bStop", "Stop", busy || !running, S.pending === "stop");
   btn("bRestart", "Restart", busy || !running, S.pending === "restart");
   btn("bUpdate", "Check for updates", busy, s.installed && s.state === "installing");
-  const n = $("#notice");
-  n.hidden = s.installed || s.state === "installing";
-  n.textContent = "Installing downloads the game server (about 700 MB for The Ship) and verifies it. You can leave this page; it keeps going.";
+  $("#notice").hidden = s.installed || s.state === "installing";
   $("#cfgSaveRestart").disabled = busy || !running;
 }
 const show = (id, on) => { $("#" + id).hidden = !on; };
@@ -607,8 +654,8 @@ $("#bRestart").onclick = () => run("restart", "Confirm restart");
 $("#bUpdate").onclick = () => run("update", sv() && sv().state === "running" ? "Confirm: restarts server" : null);
 $("#bRemove").onclick = async () => {
   const b = $("#bRemove");
-  if (!armed.remove) { b.classList.add("armed"); b.textContent = "Confirm remove"; armed.remove = setTimeout(() => { delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this game"; }, 3500); return; }
-  clearTimeout(armed.remove); delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this game";
+  if (!armed.remove) { b.classList.add("armed"); b.textContent = "Confirm remove"; armed.remove = setTimeout(() => { delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this server"; }, 3500); return; }
+  clearTimeout(armed.remove); delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this server";
   try { await api("DELETE", "/api/servers/" + S.sid); toast("Removed. Game files were kept."); S.sid = null; await pollServers(); location.hash = "overview"; route(); }
   catch (e) { toast(e.message, true); }
 };
@@ -629,6 +676,7 @@ function renderPorts(rows) {
       el("td", { text: f.proto.toUpperCase() }), el("td", { text: f.required ? "Yes" : "Maybe" }), srv));
   }
   const need = rows.filter((r) => r.required), allUp = need.length && need.every((r) => r.listening);
+  S.portRows = rows; if (sv()) renderFacts(sv());
   $("#portsHint").textContent = !rows.length ? "" : allUp
     ? "The server is listening. Forward these on your router to this machine’s LAN address, then test from outside your network (a phone on mobile data, or a friend). “Listening” only means the server is bound locally."
     : "Forward these on your router to this machine’s LAN address. “Listening” shows once the server is running.";
@@ -674,7 +722,7 @@ const markDirty = () => { $("#dirty").hidden = !dirty(); };
 async function openCfg(name, force) {
   if (!force && dirty() && !window.confirm("Discard unsaved changes?")) return;
   S.cfgName = name; const sid = S.sid;
-  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.name === name)));
+  document.querySelectorAll(".ctab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.name === name)));
   try {
     const c = await api("GET", `/api/servers/${sid}/config/${encodeURIComponent(name)}`);
     if (S.sid !== sid) return;

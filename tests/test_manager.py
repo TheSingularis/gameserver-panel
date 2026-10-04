@@ -36,3 +36,13 @@ async def test_remove_keeps_files(tmp_path):
     await m.remove("fake")
     assert (s.server_dir / "keep.txt").exists() and m.list() == []
     assert ServerManager(tmp_path, modules=FAKE_CATALOG).list() == []
+
+
+def test_several_named_servers_per_game_and_rename_persists(tmp_path):
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    a, b, c = m.add("fake", "Friends"), m.add("fake", "Friends"), m.add("fake")
+    assert [a.id, b.id, c.id] == ["friends", "friends-2", "fake"]
+    assert a.server_dir != b.server_dir
+    m.rename("friends-2", "Hardcore")
+    again = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    assert [s.name for s in again.servers.values()] == ["Friends", "Hardcore", "Fake"]
