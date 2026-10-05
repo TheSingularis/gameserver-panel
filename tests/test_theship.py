@@ -106,3 +106,9 @@ def test_clean_keeps_ban_list_and_map_cycle(tmp_path):
     (m.server_dir / "TSRDedicated.exe").write_text("x")
     m.clean(lambda l: None)
     assert sorted(p.name for p in m.server_dir.rglob("*") if p.is_file()) == ["banned_user.cfg", "mapcycle.txt"]
+
+
+def test_describe_reports_space_separated_config(tmp_path):
+    d = TheShip(tmp_path / "c", tmp_path / "s").describe()
+    assert d["config_format"] == "space"
+    assert {"hostname", "sv_password", "maxplayers"} <= {f["key"] for f in d["config_schema"]["server.cfg"]}

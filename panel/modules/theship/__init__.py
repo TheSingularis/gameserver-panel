@@ -13,7 +13,7 @@ import re
 import shutil
 from pathlib import Path
 
-from ..base import GameModule, LaunchSpec, LogFn, Port
+from ..base import ConfigField, GameModule, LaunchSpec, LogFn, Port
 
 SERVER_APP_ID = "443050"
 GAME_APP_ID = "383790"  # steam_appid.txt must stay this
@@ -31,6 +31,16 @@ class TheShip(GameModule):
     id = "theship"
     name = "The Ship: Remasted"
     description = "Murder-mystery hunt on a cruise ship. Dedicated server with a public listing."
+    config_format = "space"  # server.cfg is `key value` with // comments; the form reads help text from them
+    config_schema = {"server.cfg": [
+        ConfigField("hostname", "Server name", help="Shown in the server list"),
+        ConfigField("sv_password", "Join password", "password", help="Leave empty for an open server"),
+        ConfigField("hostport", "Game port", "number", help="If you change this, forward the new port"),
+        ConfigField("maxplayers", "Max players", "number"),
+        ConfigField("vote_kick_disable", "Disable vote kick", "bool"),
+        ConfigField("vote_changemap_disable", "Disable vote to change map", "bool"),
+        ConfigField("vote_changemode_disable", "Disable vote to change game mode", "bool"),
+    ]}
     ports = [
         Port(7777, 7778, "udp", "game and query traffic (verified: forwarding these made the server public)"),
         Port(7776, 7778, "tcp", "forwarded in the verified setup; not proven necessary", required=False),

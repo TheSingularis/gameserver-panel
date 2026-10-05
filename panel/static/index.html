@@ -198,10 +198,18 @@ a.btn.primary { color: var(--accent-ink); }
 .seg-tog { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg-tog button { border: 0; background: transparent; padding: 5px 14px; cursor: pointer; font-weight: 600; color: var(--muted); }
 .seg-tog button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
-.cfg-form { display: grid; gap: 14px; }
-.cfg-form h3 { margin-top: 4px; }
-.cfg-form .field .help { font-size: 12.5px; color: var(--muted); }
-.cfg-form .field.check label { display: flex; align-items: center; gap: 8px; }
+.cfg-layout { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: start; }
+.cfg-layout.single { grid-template-columns: minmax(0, 1fr); } .cfg-layout.single .cfg-nav { display: none; }
+.cfg-nav { position: sticky; top: 8px; display: grid; gap: 2px; }
+.cfg-navb { border: 0; background: transparent; text-align: left; padding: 6px 9px; border-radius: 7px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; }
+.cfg-navb:hover { background: var(--accent-soft); color: var(--accent); }
+.cfg-sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 14px; scroll-margin-top: 8px; }
+.cfg-sec h3 { margin: 0; }
+.cfg-sec .field { gap: 4px; }
+.cfg-sec .help { font-size: 12.5px; color: var(--muted); }
+.cfg-sec .key { font-size: 11.5px; color: var(--muted); opacity: .75; }
+.cfg-sec .field.check label { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 640px) { .cfg-layout { grid-template-columns: minmax(0, 1fr); } .cfg-nav { position: static; display: flex; overflow-x: auto; } .cfg-navb { white-space: nowrap; } }
 .dirty { color: var(--warn); font-size: 13px; font-weight: 600; }
 .ctabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
 .ctab { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-weight: 600; color: var(--muted); }
@@ -324,7 +332,9 @@ a.btn.primary { color: var(--accent-ink); }
               <button type="button" id="cfgViewRaw" aria-pressed="false">Raw file</button>
             </div>
           </div>
-          <div class="cfg-form" id="cfgForm" hidden></div>
+          <div class="cfg-form" id="cfgForm" hidden>
+            <div class="cfg-layout" id="cfgLayout"><nav class="cfg-nav" id="cfgNav" aria-label="Config sections"></nav><div id="cfgSections"></div></div>
+          </div>
           <textarea class="editor" id="editor" spellcheck="false" aria-label="Config file contents"></textarea>
           <div class="row" style="margin-top:12px">
             <button class="btn primary" id="cfgSave" type="button">Save</button>
@@ -781,13 +791,19 @@ $("#logCopy").onclick = async () => {
 };
 
 /* ---------- config ---------- */
-/* Form view edits the same text the raw editor shows, one `key=value` line at a time, so nothing else in the file
-   (comments, unknown keys, ordering) is ever rewritten and switching views cannot lose edits. */
-const CFG_LINE = /^(\s*)([A-Za-z_][\w.\-]*)(\s*=\s*)(.*?)(\s*)$/;
+/* Form view edits the same text the raw editor shows, one setting line at a time, so nothing else in the file
+   (comments, unknown lines, ordering) is ever rewritten and switching views cannot lose edits.
+   Settings are `key=value` or, for games like The Ship, `key value`. Comment lines directly above a setting become its
+   help text and `// ****` banner blocks become sections; the module can override labels and types. */
+const CFG_COMMENT = /^\s*(\/\/|#|;)/, CFG_STAR = /^\s*(\/\/|#|;)\s*\*{3,}\s*$/;
+const cfgLineRe = () => (S.detail && S.detail.config_format) === "space"
+  ? /^(\s*)([A-Za-z_][\w.\-]*)(\s+|$)(.*?)(\s*)$/ : /^(\s*)([A-Za-z_][\w.\-]*)(\s*=\s*)(.*?)(\s*)$/;
+const cfgUncomment = (l) => l.replace(/^\s*(\/\/|#|;)\s?/, "").trim();
 function cfgParse(text) {
-  const out = new Map();
+  const out = new Map(), re = cfgLineRe();
   text.split("\n").forEach((ln, i) => {
-    const m = ln.replace(/\r$/, "").match(CFG_LINE);
+    if (CFG_COMMENT.test(ln)) return;
+    const m = ln.replace(/\r$/, "").match(re);
     if (m && !out.has(m[2])) out.set(m[2], { line: i, value: m[4] });
   });
   return out;
@@ -796,45 +812,87 @@ function cfgPatch(text, key, value) {
   const hit = cfgParse(text).get(key), lines = text.split("\n");
   if (hit) {
     const cr = lines[hit.line].endsWith("\r") ? "\r" : "";
-    lines[hit.line] = lines[hit.line].replace(/\r$/, "").replace(CFG_LINE, (_, a, k, eq, _v, tail) => a + k + eq + value + tail) + cr;
+    lines[hit.line] = lines[hit.line].replace(/\r$/, "").replace(cfgLineRe(), (_, a, k, sep, _v, tail) => a + k + (sep || " ") + value + tail) + cr;
     return lines.join("\n");
   }
-  return text + (text === "" || text.endsWith("\n") ? "" : "\n") + `${key}=${value}\n`;
+  const sep = (S.detail && S.detail.config_format) === "space" ? " " : "=";
+  return text + (text === "" || text.endsWith("\n") ? "" : "\n") + `${key}${sep}${value}\n`;
 }
 const BOOL_STYLES = [["true", "false"], ["True", "False"], ["1", "0"], ["yes", "no"], ["on", "off"]];
 const boolStyle = (v) => BOOL_STYLES.find((p) => p.includes(v));
-function cfgFields() {
-  const declared = ((S.detail && S.detail.config_schema) || {})[S.cfgName] || [], known = new Set(declared.map((f) => f.key));
-  const extra = [...cfgParse($("#editor").value).keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, label: k, type: "text", other: true }));
-  return [...declared, ...extra];
+function cfgModel(text) {  // -> [{ title, fields: [{ key, label, type, help, options, value }] }]
+  const re = cfgLineRe(), sections = [], seen = new Set();
+  let block = [], cur = null;
+  const section = (title) => { cur = sections.find((x) => x.title === title) || (sections.push({ title, fields: [] }), sections[sections.length - 1]); };
+  const banner = (blk) => { const i = blk.map((l) => CFG_STAR.test(l)).lastIndexOf(true); if (i < 0) return blk; const t = blk.find((l) => !CFG_STAR.test(l)); if (t) section(cfgUncomment(t)); return blk.slice(i + 1); };
+  for (const raw of text.split("\n")) {
+    const ln = raw.replace(/\r$/, "");
+    if (ln.trim() === "") { banner(block); block = []; continue; }
+    if (CFG_COMMENT.test(ln)) { block.push(ln); continue; }
+    const m = ln.match(re), help = banner(block).map(cfgUncomment).filter(Boolean); block = [];
+    if (!m || seen.has(m[2])) continue;
+    seen.add(m[2]); if (!cur) section("Settings");
+    cur.fields.push(cfgField(m[2], m[4], help));
+  }
+  const declared = ((S.detail && S.detail.config_schema) || {})[S.cfgName] || [];
+  for (const d of declared) {  // module-declared labels/types win; declared keys missing from the file are offered too
+    let f = sections.flatMap((x) => x.fields).find((x) => x.key === d.key);
+    if (!f) { if (!cur) section("Settings"); f = { key: d.key, value: "", help: "" }; (sections.find((x) => x.title === "Settings") || cur).fields.push(f); }
+    Object.assign(f, { label: d.label, type: d.type }, d.help ? { help: d.help } : {}, d.options && d.options.length ? { options: d.options.map((o) => ({ value: o, label: o })) } : {});
+  }
+  return sections;
+}
+function cfgField(key, value, help) {
+  const label = key.replace(/^(ship|sv)_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const f = { key, label, value, help: help.join(" "), type: "text" }, flat = help.join(", ");
+  const names = [...new Set(flat.match(/\bNEED_ID_\w+/g) || [])];
+  const nums = [...flat.matchAll(/(\d+)\s*-\s*([^,]+?)(?=,|$)/g)].filter((x) => !/not used/i.test(x[2]));
+  if (names.length >= 2) { f.type = "select"; f.options = names.map((n) => ({ value: n, label: n })); }
+  else if (nums.length >= 2 && nums.every((x) => x[1] === "0" || x[1] === "1")) f.type = "bool";
+  else if (nums.length >= 2) { f.type = "select"; f.options = nums.map((x) => ({ value: x[1], label: `${x[1]} - ${x[2].trim()}` })); }
+  else if (boolStyle(value) && ["true", "false", "True", "False"].includes(value)) f.type = "bool";
+  else if (/pass|secret/i.test(key)) f.type = "password";
+  else if (/^-?\d+(\.\d+)?$/.test(value)) f.type = "number";
+  return f;
+}
+function cfgChanges() {
+  const a = cfgParse(S.cfgOriginal), b = cfgParse($("#editor").value);
+  return [...new Set([...a.keys(), ...b.keys()])].filter((k) => (a.has(k) ? a.get(k).value : null) !== (b.has(k) ? b.get(k).value : null)).length;
 }
 function renderCfgForm() {
-  const form = $("#cfgForm"), vals = cfgParse($("#editor").value);
-  form.textContent = ""; let otherHead = false;
-  for (const f of cfgFields()) {
-    if (f.other && !otherHead) { otherHead = true; form.append(el("h3", { class: "eyebrow", text: "Other settings" })); }
-    const cur = vals.has(f.key) ? vals.get(f.key).value : "", id = "cf_" + f.key.replace(/\W/g, "_");
-    const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); };
-    let input;
-    if (f.type === "bool") {
-      const st = boolStyle(cur) || BOOL_STYLES[0];
-      input = el("input", { type: "checkbox", id, onchange: (e) => set(e.target.checked ? st[0] : st[1]) });
-      input.checked = st.indexOf(cur) === 0;
-      form.append(el("div", { class: "field check" }, el("label", { for: id }, input, f.label), f.help ? el("span", { class: "help", text: f.help }) : ""));
-      continue;
+  const form = $("#cfgForm"), nav = $("#cfgNav"), body = $("#cfgSections"), sections = cfgModel($("#editor").value).filter((x) => x.fields.length);
+  nav.textContent = ""; body.textContent = "";
+  $("#cfgLayout").classList.toggle("single", sections.length < 2);
+  sections.forEach((sec, i) => {
+    const id = "cfgsec" + i;
+    nav.append(el("button", { type: "button", class: "cfg-navb", text: sec.title, onclick: () => { document.getElementById(id).scrollIntoView({ behavior: "smooth", block: "start" }); } }));
+    const card = el("section", { class: "cfg-sec", id }, el("h3", { class: "eyebrow", text: sec.title }));
+    for (const f of sec.fields) {
+      const cur = f.value, fid = "cf_" + f.key.replace(/\W/g, "_");
+      const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); };
+      const meta = [f.help ? el("span", { class: "help", text: f.help }) : null, el("span", { class: "key mono", text: f.key })];
+      let input;
+      if (f.type === "bool") {
+        const st = boolStyle(cur) || BOOL_STYLES[0];
+        input = el("input", { type: "checkbox", id: fid, onchange: (e) => set(e.target.checked ? st[0] : st[1]) });
+        input.checked = st.indexOf(cur) === 0;
+        card.append(el("div", { class: "field check" }, el("label", { for: fid }, input, f.label), ...meta));
+        continue;
+      }
+      if (f.type === "select") {
+        input = el("select", { class: "input", id: fid, onchange: (e) => set(e.target.value) });
+        const opts = f.options.some((o) => o.value === cur) || cur === "" ? f.options : [{ value: cur, label: cur }, ...f.options];
+        for (const o of opts) input.append(el("option", { value: o.value, text: o.label }));
+        input.value = cur;
+      } else {
+        input = el("input", { class: "input", id: fid, type: f.type === "number" ? "number" : f.type === "password" ? "password" : "text", autocomplete: "off", oninput: (e) => set(e.target.value) });
+        input.value = cur;
+      }
+      card.append(el("div", { class: "field" }, el("label", { for: fid, text: f.label }), input, ...meta));
     }
-    if (f.type === "select") {
-      input = el("select", { class: "input", id, onchange: (e) => set(e.target.value) });
-      const opts = f.options.includes(cur) || cur === "" ? f.options : [cur, ...f.options];
-      for (const o of opts) input.append(el("option", { value: o, text: o }));
-      input.value = cur;
-    } else {
-      input = el("input", { class: "input", id, type: f.type === "number" ? "number" : f.type === "password" ? "password" : "text", autocomplete: "off", oninput: (e) => set(e.target.value) });
-      input.value = cur;
-    }
-    form.append(el("div", { class: "field" }, el("label", { for: id, text: f.label }), input, f.help ? el("span", { class: "help", text: f.help }) : ""));
-  }
-  if (!form.children.length) form.append(el("p", { class: "muted", text: "No settings were recognised in this file. Use the raw view." }));
+    body.append(card);
+  });
+  if (!sections.length) body.append(el("p", { class: "muted", text: "No settings were recognised in this file. Use the raw view." }));
 }
 function setCfgView(raw) {
   S.cfgRaw = raw; store.set("cfgView", raw ? "raw" : "form");
@@ -843,14 +901,17 @@ function setCfgView(raw) {
   if (!raw) renderCfgForm();
 }
 function syncCfgView() {  // after a file loads: offer the form only when there is something to show
-  const any = $("#editor").value.trim() !== "" && cfgFields().length > 0;  // an empty file is seeded by the game on first start: do not pre-empt that
+  const any = $("#editor").value.trim() !== "" && cfgModel($("#editor").value).some((x) => x.fields.length);  // an empty file is seeded by the game on first start: do not pre-empt that
   $("#cfgBar").hidden = !any;
   setCfgView(!any || store.get("cfgView") === "raw");
 }
 $("#cfgViewForm").onclick = () => setCfgView(false);
 $("#cfgViewRaw").onclick = () => setCfgView(true);
 const dirty = () => $("#editor").value !== S.cfgOriginal;
-const markDirty = () => { $("#dirty").hidden = !dirty(); };
+const markDirty = () => {
+  const d = $("#dirty"), n = dirty() ? cfgChanges() : 0;
+  d.hidden = !dirty(); d.textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : "Unsaved changes";
+};
 async function openCfg(name, force) {
   if (!force && dirty() && !window.confirm("Discard unsaved changes?")) return;
   S.cfgName = name; const sid = S.sid;

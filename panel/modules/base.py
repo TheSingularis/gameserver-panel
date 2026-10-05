@@ -49,6 +49,8 @@ class GameModule:
     config_files: list[str] = []
     # Known settings per config file, for the form view. Keys in the file that are not listed here still
     # appear under "Other settings", and anything the form does not touch is left byte-for-byte as it was.
+    # Syntax of the config files: "equals" for `key=value`, "space" for `key value`.
+    config_format: str = "equals"
     config_schema: dict[str, list[ConfigField]] = {}
     # Paths under server_dir that hold player data (worlds, saves, bans) and must survive a clean reinstall.
     # None = not declared yet, which makes "clean & reinstall" refuse; use [] for a game with nothing to keep.
@@ -110,6 +112,7 @@ class GameModule:
             "name": self.name,
             "ports": [p.__dict__ for p in self.ports],
             "config_files": self.config_files,
+            "config_format": self.config_format,
             "config_schema": {f: [asdict(x) for x in fs] for f, fs in self.config_schema.items()},
             "actions": sorted(self.actions()),
             "installed": self.is_installed(),
