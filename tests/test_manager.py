@@ -46,3 +46,47 @@ def test_several_named_servers_per_game_and_rename_persists(tmp_path):
     m.rename("friends-2", "Hardcore")
     again = ServerManager(tmp_path, modules=FAKE_CATALOG)
     assert [s.name for s in again.servers.values()] == ["Friends", "Hardcore", "Fake"]
+
+
+def test_autostart_flag_persists(tmp_path):
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    m.add("fake")
+    assert m.get("fake").autostart is False
+    m.set_autostart("fake", True)
+    assert ServerManager(tmp_path, modules=FAKE_CATALOG).get("fake").autostart is True
+
+
+async def _autostart(tmp_path, installed):
+    """Three fake servers (a, b, c), all set to auto-start; `installed` says which have game files. Returns (manager, sleeps, started)."""
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    for n in "abc":
+        s = m.add("fake", n)
+        s.module.installed = n in installed
+        m.set_autostart(s.id, True)
+    sleeps, started = [], []
+    for s in m.servers.values():
+        async def fake_start(sid=s.id): started.append(sid)
+        s.supervisor.start = fake_start
+    async def sleep(t): sleeps.append(t)
+    await m.run_autostart(60, 30, sleep)
+    return m, sleeps, started
+
+
+async def test_autostart_waits_then_staggers(tmp_path):
+    _, sleeps, started = await _autostart(tmp_path, "abc")
+    assert sleeps == [60, 30, 30] and started == ["a", "b", "c"]
+
+
+async def test_autostart_skips_uninstalled_without_a_gap(tmp_path):
+    m, sleeps, started = await _autostart(tmp_path, "ac")
+    assert sleeps == [60, 30] and started == ["a", "c"]
+    assert "not installed" in "\n".join(m.get("b").supervisor.tail(10))
+
+
+async def test_autostart_does_nothing_when_no_server_opted_in(tmp_path):
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    m.add("fake")
+    sleeps = []
+    async def sleep(t): sleeps.append(t)
+    await m.run_autostart(60, 30, sleep)
+    assert sleeps == []
