@@ -76,11 +76,10 @@ a.btn.primary { color: var(--accent-ink); }
 .dot[data-s="new"] { background: transparent; border: 1.5px dashed var(--muted); }
 @keyframes pulse { 50% { opacity: .45; } }
 
-/* ---- game icon tile (Steam capsule art, or a coloured initial when there is none) ---- */
-.ico { --h: 210; width: var(--w, 32px); height: var(--w, 32px); border-radius: 7px; flex: none; overflow: hidden; display: grid; place-items: center;
-  background: hsl(var(--h) 45% 32%); color: #fff; font-weight: 750; font-size: calc(var(--w, 32px) * .45); position: relative; }
-.ico img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.ico.wide { width: calc(var(--w, 32px) * 2.66); }
+/* ---- game icon tile (the game's icon filling the tile, or a neutral grey initial when there is none) ---- */
+.ico { width: var(--w, 32px); height: var(--w, 32px); border-radius: 7px; flex: none; overflow: hidden; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font-weight: 750; font-size: calc(var(--w, 32px) * .45); position: relative; }
+.ico img { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); object-fit: cover; }
 
 /* ---- shell ---- */
 .app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
@@ -449,10 +448,9 @@ function fmtUp(sec) {
   if (m) return `${m}m ${String(s).padStart(2, "0")}s`;
   return `${s}s`;
 }
-/* Game icon: bundled/Steam image when there is one, else a coloured initial. wide = capsule shape. */
-function iconEl(url, name, w, wide) {
-  const hue = [...(name || "?")].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
-  const t = el("span", { class: "ico" + (wide ? " wide" : ""), style: `--w:${w}px;--h:${hue}`, "aria-hidden": "true" }, (name || "?").trim().charAt(0).toUpperCase());
+/* Game icon: the game's image filling the tile when there is one, else a neutral grey initial. */
+function iconEl(url, name, w) {
+  const t = el("span", { class: "ico", style: `--w:${w}px`, "aria-hidden": "true" }, (name || "?").trim().charAt(0).toUpperCase());
   if (url) { const i = el("img", { src: url, alt: "", loading: "lazy", referrerpolicy: "no-referrer" }); i.onerror = () => i.remove(); t.append(i); }
   return t;
 }
@@ -603,7 +601,7 @@ async function loadGames() {
       catch (err) { toast(err.message, true); go.disabled = false; }
     };
     box.append(el("div", { class: "grow-row" },
-      iconEl(g.icon, g.name, 40, true),
+      iconEl(g.icon, g.name, 40),
       el("div", { style: "min-width:0" }, el("h3", { text: g.name }), el("p", { text: g.description }),
         el("div", { class: "chips" }, ...g.tags.map((t) => el("span", { class: "chip", text: t })),
           g.servers ? el("span", { class: "chip", text: `${g.servers} added` }) : null, soon ? el("span", { class: "chip soon", text: "Planned" }) : null)),
