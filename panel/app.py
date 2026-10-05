@@ -220,7 +220,8 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
 
     @app.get("/")
     async def index():
-        return FileResponse(STATIC / "index.html")
+        # no-cache = always revalidate (cheap 304), so a redeploy is never masked by a browser-cached page
+        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

@@ -107,3 +107,8 @@ def test_config_schema_is_described(tmp_path):
     from panel.modules.demo import Demo
     d = Demo(tmp_path / "c", tmp_path / "s").describe()
     assert d["config_schema"]["demo.cfg"][0] == {"key": "name", "label": "Server name", "type": "text", "help": "Shown in the server list", "options": ()}
+
+
+async def test_index_is_never_served_from_browser_cache(client):
+    r = await client.get("/")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
