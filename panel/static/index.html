@@ -375,6 +375,11 @@ a.btn.primary { color: var(--accent-ink); }
               <button class="btn" type="submit">Sign in with SteamCMD</button>
             </form>
           </div>
+          <div class="adv-b" id="startupBox">
+            <h3 class="eyebrow">Startup</h3>
+            <label class="row" style="gap:8px;font-weight:600"><input type="checkbox" id="autoStart"> Start this server automatically with the container</label>
+            <p class="muted" id="autoHint" style="margin:0;font-size:13.5px"></p>
+          </div>
           <div class="adv-b" id="maintBox">
             <h3 class="eyebrow">Game files</h3>
             <p class="muted" style="margin:0;font-size:13.5px">Check for updates downloads and verifies the latest game files. Clean &amp; reinstall deletes the game files and downloads them again; your config is kept.</p>
@@ -690,8 +695,17 @@ function renderStatus() {
   btn("bRestart", "Restart", busy || !running, S.pending === "restart");
   btn("bUpdate", "Check for updates", busy, s.installed && s.state === "installing");
   btn("bReinstall", "Clean & reinstall", busy, S.pending === "reinstall");
+  renderAutostart(s);
   $("#notice").hidden = s.installed || s.state === "installing";
   $("#cfgSaveRestart").disabled = busy || !running;
+}
+function renderAutostart(s) {
+  const cb = $("#autoStart"), d = S.detail || {}, delay = d.autostart_delay ?? 60, gap = d.autostart_stagger ?? 30;
+  if (!cb.disabled) cb.checked = !!s.autostart;
+  const on = S.servers.filter((x) => x.autostart), pos = on.findIndex((x) => x.id === s.id) + 1;
+  const ord = (n) => n + (["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) || n % 10 > 3 ? 0 : n % 10]);
+  const rule = `When the container starts, the panel waits ${delay} s, then starts auto-start servers one at a time, ${gap} s apart.`;
+  $("#autoHint").textContent = s.autostart ? `${rule} This server is ${ord(pos)} of ${on.length}, so it starts about ${delay + gap * (pos - 1)} s after the container comes up.` : `Off. ${rule}`;
 }
 const show = (id, on) => { $("#" + id).hidden = !on; };
 function btn(id, label, off, spin) {
@@ -721,6 +735,12 @@ async function run(name, confirmText) {
   } catch (e) { toast(e.message, true); }
   clearInterval(poll); S.pending = null; await pollServers();
 }
+$("#autoStart").onchange = async (e) => {
+  const cb = e.target; cb.disabled = true;
+  try { await api("PATCH", "/api/servers/" + S.sid, { autostart: cb.checked }); toast(cb.checked ? "Will start with the container" : "Won't start automatically"); await pollServers(); }
+  catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
+  cb.disabled = false; if (sv()) renderAutostart(sv());
+};
 $("#bInstall").onclick = () => run("update");
 $("#bStart").onclick = () => run("start");
 $("#bStop").onclick = () => run("stop", "Confirm stop");

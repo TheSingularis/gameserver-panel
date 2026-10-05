@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import logging
 import os
@@ -27,6 +28,8 @@ class Settings:
     module_id: str | None = None   # legacy single-game default (PANEL_MODULE); seeds the first server
     demo: bool = False
     oidc: OidcConfig | None = None   # OIDC_* env; when set, PANEL_PASSWORD becomes optional
+    autostart_delay: float = 60      # seconds after the container starts before the first auto-start server
+    autostart_stagger: float = 30    # seconds between auto-start servers (they are heavy to boot together)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,8 +38,13 @@ class Settings:
             raise SystemExit("PANEL_PASSWORD must be at least 8 characters")
         if not pw and not oidc:
             raise SystemExit("Set PANEL_PASSWORD (min 8 chars) and/or the OIDC_* variables")
+        def secs(name: str, default: float) -> float:
+            try:
+                return max(0.0, float(os.environ.get(name, default)))
+            except ValueError:
+                raise SystemExit(f"{name} must be a number of seconds")
         return cls(pw, Path(os.environ.get("PANEL_DATA", "/data")), os.environ.get("PANEL_MODULE") or None,
-                   os.environ.get("PANEL_DEMO") == "1", oidc)
+                   os.environ.get("PANEL_DEMO") == "1", oidc, secs("AUTOSTART_DELAY", 60), secs("AUTOSTART_STAGGER", 30))
 
 
 def build_info() -> dict:
@@ -49,7 +57,13 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     secret = auth.load_secret(settings.data_dir)
     limiter = auth.LoginLimiter()
     sso = oidc or (Oidc(settings.oidc, secret) if settings.oidc else None)
-    app = FastAPI(title="gameserver-panel", docs_url=None, redoc_url=None)
+    @contextlib.asynccontextmanager
+    async def lifespan(_: FastAPI):
+        task = asyncio.create_task(mgr.run_autostart(settings.autostart_delay, settings.autostart_stagger))
+        yield
+        task.cancel()
+
+    app = FastAPI(title="gameserver-panel", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.manager = mgr
 
     def require_auth(request: Request) -> None:
@@ -147,9 +161,15 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
             raise HTTPException(409, str(e))
 
     @app.patch("/api/servers/{sid}", dependencies=protected)
-    async def rename_server(sid: str, body: dict):
+    async def update_server(sid: str, body: dict):
         server(sid)
-        return mgr.rename(sid, str(body.get("name", ""))).summary()
+        if "name" in body:
+            mgr.rename(sid, str(body["name"]))
+        if "autostart" in body:
+            if not isinstance(body["autostart"], bool):
+                raise HTTPException(400, "autostart must be true or false")
+            mgr.set_autostart(sid, body["autostart"])
+        return server(sid).summary()
 
     @app.delete("/api/servers/{sid}", dependencies=protected)
     async def remove_server(sid: str):
@@ -161,7 +181,8 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     @app.get("/api/servers/{sid}", dependencies=protected)
     async def detail(sid: str):
         s = server(sid)
-        return {**s.module.describe(), **s.summary()}
+        return {**s.module.describe(), **s.summary(),
+                "autostart_delay": settings.autostart_delay, "autostart_stagger": settings.autostart_stagger}
 
     @app.get("/api/servers/{sid}/status", dependencies=protected)
     async def status(sid: str):
