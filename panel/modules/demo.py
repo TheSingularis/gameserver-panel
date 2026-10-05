@@ -9,7 +9,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from .base import GameModule, LaunchSpec, LogFn, Port
+from .base import ConfigField, GameModule, LaunchSpec, LogFn, Port
 
 SCRIPT = (
     "import socket,time,sys\n"
@@ -27,6 +27,10 @@ class Demo(GameModule):
     description = "A fake server for trying out the panel. Installs in seconds and prints a heartbeat."
     ports = [Port(27000, 27000, "udp", "demo only")]
     config_files = ["demo.cfg"]
+    config_schema = {"demo.cfg": [
+        ConfigField("name", "Server name", help="Shown in the server list"),
+        ConfigField("max_players", "Max players", "number"),
+    ]}
 
     def is_installed(self) -> bool:
         return (self.server_dir / "demo.installed").exists()

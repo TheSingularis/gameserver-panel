@@ -101,3 +101,9 @@ async def test_ports_and_detail(ready):
 async def test_tampered_cookie_rejected(client):
     client.cookies.set("gsp_session", "9999999999.deadbeef")
     assert (await client.get("/api/servers")).status_code == 401
+
+
+def test_config_schema_is_described(tmp_path):
+    from panel.modules.demo import Demo
+    d = Demo(tmp_path / "c", tmp_path / "s").describe()
+    assert d["config_schema"]["demo.cfg"][0] == {"key": "name", "label": "Server name", "type": "text", "help": "Shown in the server list", "options": ()}

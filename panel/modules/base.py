@@ -7,7 +7,7 @@ which ports matter, which config files are editable, and any extra actions
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -21,6 +21,16 @@ class Port:
     proto: str  # "tcp", "udp" or "tcp+udp"
     note: str = ""
     required: bool = True  # False = forwarded in some setups but not proven necessary
+
+
+@dataclass(frozen=True)
+class ConfigField:
+    """One setting in a key=value config file, shown as a form field on the Config tab."""
+    key: str
+    label: str
+    type: str = "text"  # "text", "number", "bool", "password" or "select"
+    help: str = ""
+    options: tuple[str, ...] = ()  # for type "select"
 
 
 @dataclass
@@ -37,6 +47,9 @@ class GameModule:
     ports: list[Port] = []
     # Editable config files, relative to the module's config dir.
     config_files: list[str] = []
+    # Known settings per config file, for the form view. Keys in the file that are not listed here still
+    # appear under "Other settings", and anything the form does not touch is left byte-for-byte as it was.
+    config_schema: dict[str, list[ConfigField]] = {}
     # Paths under server_dir that hold player data (worlds, saves, bans) and must survive a clean reinstall.
     # None = not declared yet, which makes "clean & reinstall" refuse; use [] for a game with nothing to keep.
     persistent_paths: list[str] | None = None
@@ -97,6 +110,7 @@ class GameModule:
             "name": self.name,
             "ports": [p.__dict__ for p in self.ports],
             "config_files": self.config_files,
+            "config_schema": {f: [asdict(x) for x in fs] for f, fs in self.config_schema.items()},
             "actions": sorted(self.actions()),
             "installed": self.is_installed(),
         }
