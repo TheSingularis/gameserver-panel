@@ -41,7 +41,9 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
         ModuleInfo("theship", "The Ship: Remasted",
                    "Murder-mystery hunt on a cruise ship. Dedicated server with a public listing; runs the Windows build under Wine.",
                    ("Steam", "Windows via Wine", "UDP 7777"), _ship,
-                   "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/443050/capsule_231x87.jpg"),
+                   # The Ship: Remasted community icon (app 383790, the client game: the server tool 443050 has no art). The browser loads
+                   # it from Steam at runtime, nothing is bundled; offline it falls back to the grey letter tile.
+                   "https://shared.fastly.steamstatic.com/community_assets/images/apps/383790/de54185795014585bc27f4649f85f926f7ea63e5.jpg"),
         ModuleInfo("minecraft", "Minecraft: Java Edition",
                    "Vanilla and modded Java servers with world backups.",
                    ("Java", "TCP 25565")),
