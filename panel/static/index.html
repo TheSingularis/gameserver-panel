@@ -205,6 +205,12 @@ a.btn.primary { color: var(--accent-ink); }
 #toasts { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 20; width: min(360px, calc(100vw - 32px)); }
 .toast { padding: 11px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; box-shadow: var(--shadow); animation: in .18s ease-out; }
 .toast.bad { background: var(--bad); color: #fff; }
+.modal { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); padding: 20px; width: min(420px, calc(100vw - 32px)); }
+.modal::backdrop { background: rgba(0, 0, 0, .55); }
+.modal h2 { font-size: 18px; }
+.modal p { margin: 10px 0 0; font-size: 13.5px; }
+.modal-actions { justify-content: flex-end; margin-top: 18px; }
+.btn.primary.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 @keyframes in { from { transform: translateY(8px); opacity: 0; } }
 @media (max-width: 520px) { .ports .note { display: none; } .page-h h1 { font-size: 21px; } }
 </style>
@@ -273,8 +279,6 @@ a.btn.primary { color: var(--accent-ink); }
           <button class="btn primary" id="bStart" type="button">Start server</button>
           <button class="btn danger" id="bStop" type="button">Stop</button>
           <button class="btn" id="bRestart" type="button">Restart</button>
-          <button class="btn ghost" id="bUpdate" type="button">Check for updates</button>
-          <button class="btn ghost" id="bReinstall" type="button" title="Deletes the game files and downloads them again; your config is kept">Clean &amp; reinstall</button>
         </div>
       </div>
 
@@ -340,6 +344,14 @@ a.btn.primary { color: var(--accent-ink); }
               <button class="btn" type="submit">Sign in with SteamCMD</button>
             </form>
           </div>
+          <div class="adv-b" id="maintBox">
+            <h3 class="eyebrow">Game files</h3>
+            <p class="muted" style="margin:0;font-size:13.5px">Check for updates downloads and verifies the latest game files. Clean &amp; reinstall deletes the game files and downloads them again; your config is kept.</p>
+            <div class="row">
+              <button class="btn" id="bUpdate" type="button">Check for updates</button>
+              <button class="btn danger" id="bReinstall" type="button">Clean &amp; reinstall</button>
+            </div>
+          </div>
           <div class="adv-b">
             <h3 class="eyebrow">Remove from panel</h3>
             <p class="muted" style="margin:0;font-size:13.5px">Stops the server and removes it from the sidebar. Downloaded game files and config stay on disk.</p>
@@ -350,6 +362,16 @@ a.btn.primary { color: var(--accent-ink); }
     </section>
   </main>
 </div>
+<dialog id="confirm" class="modal" aria-labelledby="cfTitle">
+  <form method="dialog">
+    <h2 id="cfTitle"></h2>
+    <p class="muted" id="cfBody"></p>
+    <div class="row modal-actions">
+      <button class="btn" value="cancel" id="cfCancel">Cancel</button>
+      <button class="btn primary" value="ok" id="cfOk"></button>
+    </div>
+  </form>
+</dialog>
 <div id="toasts" aria-live="polite"></div>
 
 <script>
@@ -630,7 +652,7 @@ function renderStatus() {
   if (s.progress) renderProgress($("#prog"), $("#progPhase"), $("#progPct"), $("#progTrack"), s.progress);
 
   const busy = !!S.pending || s.state === "installing" || s.state === "stopping", running = s.state === "running";
-  show("bInstall", !s.installed); show("bStart", s.installed && !running); show("bStop", s.installed); show("bRestart", s.installed); show("bUpdate", s.installed); show("bReinstall", s.installed);
+  show("bInstall", !s.installed); show("bStart", s.installed && !running); show("bStop", s.installed); show("bRestart", s.installed); show("maintBox", s.installed);
   btn("bInstall", "Install game files", busy, S.pending === "update" || s.state === "installing");
   btn("bStart", "Start server", busy || running, S.pending === "start");
   btn("bStop", "Stop", busy || !running, S.pending === "stop");
@@ -647,6 +669,12 @@ function btn(id, label, off, spin) {
   b.textContent = ""; if (spin) b.append(el("span", { class: "spin" }), " "); b.append(spin ? label.replace(/^(Install|Check for|Clean &|Start|Stop|Restart)/, (m) => ({ Install: "Installing", "Check for": "Checking for", "Clean &": "Cleaning &", Start: "Starting", Stop: "Stopping", Restart: "Restarting" }[m])) : label);
 }
 const armed = {};
+function confirmModal(title, body, label, danger) {
+  const d = $("#confirm");
+  $("#cfTitle").textContent = title; $("#cfBody").textContent = body;
+  const ok = $("#cfOk"); ok.textContent = label; ok.classList.toggle("danger", !!danger);
+  return new Promise((res) => { d.onclose = () => res(d.returnValue === "ok"); d.returnValue = "cancel"; d.showModal(); $("#cfCancel").focus(); });
+}
 async function run(name, confirmText) {
   const id = { start: "bStart", stop: "bStop", restart: "bRestart", reinstall: "bReinstall", update: S.detail && !sv().installed ? "bInstall" : "bUpdate" }[name], b = $("#" + id);
   if (confirmText && !armed[name]) {
@@ -666,8 +694,13 @@ $("#bInstall").onclick = () => run("update");
 $("#bStart").onclick = () => run("start");
 $("#bStop").onclick = () => run("stop", "Confirm stop");
 $("#bRestart").onclick = () => run("restart", "Confirm restart");
-$("#bUpdate").onclick = () => run("update", sv() && sv().state === "running" ? "Confirm: restarts server" : null);
-$("#bReinstall").onclick = () => run("reinstall", "Confirm: deletes game files");
+$("#bUpdate").onclick = async () => {
+  const running = sv() && sv().state === "running";
+  if (await confirmModal("Check for updates?", running ? "This downloads and verifies the latest game files and restarts the server, so connected players will be disconnected." : "This downloads and verifies the latest game files.", "Check for updates", running)) run("update");
+};
+$("#bReinstall").onclick = async () => {
+  if (await confirmModal("Clean & reinstall?", "This deletes all downloaded game files and downloads them again. Your config is kept. The server is stopped while this runs and started again afterwards if it was running.", "Delete and reinstall", true)) run("reinstall");
+};
 $("#bRemove").onclick = async () => {
   const b = $("#bRemove");
   if (!armed.remove) { b.classList.add("armed"); b.textContent = "Confirm remove"; armed.remove = setTimeout(() => { delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this server"; }, 3500); return; }
