@@ -91,3 +91,33 @@ async def test_update_reports_progress_then_clears(tmp_path):
     await s.update()
     assert seen == [{"pct": 50.0, "phase": "Downloading"}]
     assert s.progress is None and s.status()["progress"] is None
+
+
+async def test_reinstall_wipes_game_files_but_not_config(tmp_path):
+    m = FakeModule(tmp_path / "config", tmp_path / "server")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "fake.cfg").write_text("keep")
+    (tmp_path / "server" / "sub").mkdir(parents=True)
+    (tmp_path / "server" / "sub" / "broken.dat").write_text("x")
+    (tmp_path / "server" / "top.bin").write_text("x")
+    m.installed = True
+    s = Supervisor(m, stop_timeout=2)
+    await s.start()
+    await s.reinstall()
+    assert sorted(p.name for p in (tmp_path / "server").iterdir()) == []
+    assert (tmp_path / "config" / "fake.cfg").read_text() == "keep"
+    assert m.installs == 1 and s.state == "running" and s.progress is None  # restarted afterwards
+    await s.stop()
+
+
+async def test_reinstall_failure_leaves_server_stopped(tmp_path):
+    m = FakeModule(tmp_path / "config", tmp_path / "server")
+    (tmp_path / "server").mkdir()
+
+    async def boom(log):
+        raise RuntimeError("steamcmd exited with 8")
+    m.install = boom
+    s = Supervisor(m, stop_timeout=2)
+    with pytest.raises(RuntimeError):
+        await s.reinstall()
+    assert s.state == "stopped" and any("reinstall failed" in l for l in s.tail())

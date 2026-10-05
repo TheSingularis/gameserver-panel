@@ -18,6 +18,7 @@ from ..base import GameModule, LaunchSpec, LogFn, Port
 SERVER_APP_ID = "443050"
 GAME_APP_ID = "383790"  # steam_appid.txt must stay this
 EXE = "TSRDedicated.exe"
+MISSING_CONFIG_EXIT = 8  # steamcmd "Failed installing app (Missing configuration)"
 STATE_RE = re.compile(r"Update state \(0x[0-9a-f]+\) ([a-z ]+), progress: ([\d.]+)")
 SELF_UPDATE_RE = re.compile(r"\[\s*(\d+)%\]\s+(Downloading|Extracting|Installing)")
 PHASES = {"downloading": "Downloading", "verifying update": "Verifying", "verifying install": "Verifying",
@@ -84,10 +85,15 @@ class TheShip(GameModule):
 
     async def install(self, log: LogFn) -> None:
         self.server_dir.mkdir(parents=True, exist_ok=True)
-        code = await self._run([
-            self.steamcmd, "+@sSteamCmdForcePlatformType", "windows",
-            "+force_install_dir", str(self.server_dir), "+login", "anonymous",
-            "+app_update", SERVER_APP_ID, "validate", "+quit"], log, self._home_env())
+        argv = [self.steamcmd, "+@sSteamCmdForcePlatformType", "windows",
+                "+force_install_dir", str(self.server_dir), "+login", "anonymous",
+                "+app_update", SERVER_APP_ID, "validate", "+quit"]
+        code = await self._run(argv, log, self._home_env())
+        if code == MISSING_CONFIG_EXIT:
+            # A cold steamcmd (no appinfo cache yet) can quit with "Missing configuration" before the app's
+            # info arrives; the first run warms the cache, so one retry normally succeeds.
+            log("[panel] steamcmd had no app info yet (exit 8); retrying once")
+            code = await self._run(argv, log, self._home_env())
         if code != 0:
             raise RuntimeError(f"steamcmd exited with {code}")
         (self.server_dir / "steam_appid.txt").write_text(GAME_APP_ID + "\n")

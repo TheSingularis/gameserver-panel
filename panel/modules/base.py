@@ -6,6 +6,7 @@ which ports matter, which config files are editable, and any extra actions
 """
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -46,6 +47,17 @@ class GameModule:
     async def install(self, log: LogFn) -> None:
         """Install or update the game server files. Must stream progress to log."""
         raise NotImplementedError
+
+    def clean(self, log: LogFn) -> None:
+        """Delete the installed game files so install() starts from nothing (the config dir is left alone)."""
+        d = self.server_dir
+        if not d.is_dir():
+            return
+        if d.is_symlink() or d == d.parent or len(d.resolve().parts) < 3:
+            raise RuntimeError(f"refusing to clean {d}")
+        for child in d.iterdir():
+            shutil.rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
+        log(f"[panel] removed game files in {d}")
 
     def launch_spec(self) -> LaunchSpec:
         raise NotImplementedError

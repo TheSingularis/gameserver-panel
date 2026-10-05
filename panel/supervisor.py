@@ -122,16 +122,26 @@ class Supervisor:
             await self._start_locked()
 
     async def update(self, restart_after: bool = True) -> None:
+        await self._install(restart_after, clean=False)
+
+    async def reinstall(self, restart_after: bool = True) -> None:
+        """Delete the game files and install from scratch (for corrupt or half-written installs)."""
+        await self._install(restart_after, clean=True)
+
+    async def _install(self, restart_after: bool, clean: bool) -> None:
         async with self._lock:
             was_running = self.state == RUNNING
             await self._stop_locked()
             self.state = INSTALLING
-            self.progress = {"pct": None, "phase": "Starting"}
+            self.progress = {"pct": None, "phase": "Cleaning" if clean else "Starting"}
             self.module.on_progress = self._set_progress
             try:
+                if clean:
+                    self.module.clean(self.log)
+                    self.progress = {"pct": None, "phase": "Starting"}
                 await self.module.install(self.log)
             except Exception as e:
-                self.log(f"[panel] update failed: {e}")
+                self.log(f"[panel] {'reinstall' if clean else 'update'} failed: {e}")
                 self.state, self.progress = STOPPED, None
                 raise
             self.state, self.progress = STOPPED, None
