@@ -107,3 +107,21 @@ def test_config_schema_is_described(tmp_path):
     from panel.modules.demo import Demo
     d = Demo(tmp_path / "c", tmp_path / "s").describe()
     assert d["config_schema"]["demo.cfg"][0] == {"key": "name", "label": "Server name", "type": "text", "help": "Shown in the server list", "options": ()}
+
+
+async def test_index_is_never_served_from_browser_cache(client):
+    r = await client.get("/")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+async def test_page_carries_its_build_and_api_reports_it(client, monkeypatch):
+    monkeypatch.setenv("PANEL_COMMIT", "abcdef0123456789")
+    monkeypatch.setenv("PANEL_BUILT", "2026-10-05")
+    r = await client.get("/")
+    assert 'name="panel-build" content="abcdef0|2026-10-05"' in r.text
+    assert (await client.get("/api/version")).status_code == 401  # needs login like the rest of the API
+
+
+async def test_version_endpoint_when_logged_in(ready, monkeypatch):
+    monkeypatch.setenv("PANEL_COMMIT", "abcdef0123456789")
+    assert (await ready.get("/api/version")).json() == {"commit": "abcdef0", "built": ""}

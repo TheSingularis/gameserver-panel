@@ -1,6 +1,11 @@
 FROM debian:bookworm-slim
 
+# Set by CI so the UI can show which build is running (see ci.yml); "dev" for local builds
+ARG PANEL_COMMIT=dev
+ARG PANEL_BUILT=
 ENV DEBIAN_FRONTEND=noninteractive \
+    PANEL_COMMIT=$PANEL_COMMIT \
+    PANEL_BUILT=$PANEL_BUILT \
     PANEL_DATA=/data \
     PANEL_PORT=8080 \
     STEAMCMD=/opt/steamcmd/steamcmd.sh \
