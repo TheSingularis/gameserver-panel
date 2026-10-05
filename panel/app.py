@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, netcheck
@@ -37,6 +37,11 @@ class Settings:
             raise SystemExit("Set PANEL_PASSWORD (min 8 chars) and/or the OIDC_* variables")
         return cls(pw, Path(os.environ.get("PANEL_DATA", "/data")), os.environ.get("PANEL_MODULE") or None,
                    os.environ.get("PANEL_DEMO") == "1", oidc)
+
+
+def build_info() -> dict:
+    """Which build is running: short commit and build date, baked into the image (see Dockerfile and ci.yml)."""
+    return {"commit": os.environ.get("PANEL_COMMIT", "dev")[:7] or "dev", "built": os.environ.get("PANEL_BUILT", "")}
 
 
 def create_app(settings: Settings, manager: ServerManager | None = None, oidc: Oidc | None = None) -> FastAPI:
@@ -122,6 +127,10 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         return {"ok": True}
 
     # ---- servers & catalogue -------------------------------------------
+    @app.get("/api/version", dependencies=protected)
+    async def version():
+        return build_info()
+
     @app.get("/api/servers", dependencies=protected)
     async def list_servers():
         return {"servers": mgr.list()}
@@ -220,8 +229,11 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
 
     @app.get("/")
     async def index():
-        # no-cache = always revalidate (cheap 304), so a redeploy is never masked by a browser-cached page
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+        # The build is written into the page itself, so the UI can show which version the browser is really running
+        # and notice when the server has been updated underneath it. no-cache: a redeploy is never masked by a cached page.
+        b = build_info()
+        html = (STATIC / "index.html").read_text().replace('name="panel-build" content=""', f'name="panel-build" content="{b["commit"]}|{b["built"]}"')
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
