@@ -100,3 +100,9 @@ async def test_ports_and_detail(ready):
 async def test_tampered_cookie_rejected(client):
     client.cookies.set("gsp_session", "9999999999.deadbeef")
     assert (await client.get("/api/servers")).status_code == 401
+
+
+async def test_reinstall_endpoint_and_capability_flag(ready):
+    c, base = ready, "/api/servers/fake"
+    assert (await c.get(base)).json()["can_reinstall"] is False
+    assert (await c.post(base + "/reinstall")).status_code == 409  # fake game declares no keep paths

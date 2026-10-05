@@ -92,6 +92,14 @@ class TheShip(GameModule):
             raise RuntimeError(f"steamcmd exited with {code}")
         (self.server_dir / "steam_appid.txt").write_text(GAME_APP_ID + "\n")
 
+    keep: list[str] = []  # the server is ephemeral: server.cfg lives on the config volume, nothing else needs to survive
+
+    def clean(self) -> None:
+        # server.cfg may only exist as the copy steamcmd shipped; save it to the config volume before the wipe.
+        if self.server_dir.is_dir():
+            self._sync_config()
+        super().clean()
+
     # -- launch -----------------------------------------------------------
     def _sync_config(self) -> None:
         """Keep server.cfg on the persistent config volume; seed it from the shipped default."""

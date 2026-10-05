@@ -170,7 +170,7 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
             raise HTTPException(409, str(e))
         return sup.status()
 
-    for _name in ("start", "stop", "restart", "update"):
+    for _name in ("start", "stop", "restart", "update", "reinstall"):
         def _make(name: str):
             async def handler(sid: str):
                 return await control(sid, name)

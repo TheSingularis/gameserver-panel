@@ -91,3 +91,54 @@ async def test_update_reports_progress_then_clears(tmp_path):
     await s.update()
     assert seen == [{"pct": 50.0, "phase": "Downloading"}]
     assert s.progress is None and s.status()["progress"] is None
+
+
+async def test_reinstall_wipes_game_files_but_keeps_config_and_kept_paths(tmp_path):
+    server, config = tmp_path / "server", tmp_path / "config"
+    (server / "bin").mkdir(parents=True)
+    (server / "saves" / "world1").mkdir(parents=True)
+    (server / "bin" / "game.exe").write_text("corrupt")
+    (server / "saves" / "world1" / "level.dat").write_text("precious")
+    (server / "junk.tmp").write_text("x")
+    config.mkdir()
+    (config / "fake.cfg").write_text("settings")
+    m = FakeModule(config, server)
+    m.keep, m.installed = ["saves"], True
+    s = Supervisor(m)
+    await s.reinstall(restart_after=False)
+    assert not (server / "bin").exists() and not (server / "junk.tmp").exists()
+    assert (server / "saves" / "world1" / "level.dat").read_text() == "precious"
+    assert (config / "fake.cfg").read_text() == "settings"
+    assert m.installs == 1 and s.state == "stopped"
+
+
+async def test_reinstall_refused_unless_module_declares_what_to_keep(tmp_path):
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "world.dat").write_text("precious")
+    m = FakeModule(tmp_path / "config", server)  # keep is None
+    s = Supervisor(m)
+    with pytest.raises(RuntimeError, match="does not support"):
+        await s.reinstall()
+    assert (server / "world.dat").exists() and m.installs == 0 and s.state == "stopped"
+
+
+async def test_reinstall_refuses_server_dir_that_contains_config(tmp_path):
+    m = FakeModule(tmp_path / "c", tmp_path)  # config inside server dir
+    m.keep = []
+    with pytest.raises(RuntimeError, match="refusing"):
+        await Supervisor(m).reinstall()
+    assert (tmp_path).exists()
+
+
+async def test_reinstall_keeps_nested_path_and_wipes_its_siblings(tmp_path):
+    server = tmp_path / "server"
+    (server / "data" / "worlds").mkdir(parents=True)
+    (server / "data" / "cache").mkdir()
+    (server / "data" / "worlds" / "w.dat").write_text("precious")
+    (server / "data" / "cache" / "c").write_text("x")
+    m = FakeModule(tmp_path / "config", server)
+    m.keep = ["data/worlds"]
+    await Supervisor(m).reinstall(restart_after=False)
+    assert (server / "data" / "worlds" / "w.dat").read_text() == "precious"
+    assert not (server / "data" / "cache").exists()

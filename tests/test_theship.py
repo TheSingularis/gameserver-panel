@@ -70,3 +70,16 @@ async def test_steamcmd_progress_is_parsed_and_kept_out_of_the_log(tmp_path):
     await m.install(logs.append)
     assert progress == [(40.0, "Updating SteamCMD"), (12.5, "Downloading"), (99.0, "Verifying")]
     assert any("Success!" in l for l in logs) and not any("Update state" in l for l in logs)
+
+
+def test_clean_saves_shipped_cfg_then_wipes_server_dir(tmp_path):
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    (m.server_dir / "TSRDS_1").mkdir(parents=True)
+    (m.server_dir / "TSRDS_1" / "server.cfg").write_text("shipped")
+    (m.server_dir / "TSRDedicated.exe").write_text("corrupt")
+    (m.config_dir / "home").mkdir(parents=True)
+    (m.config_dir / "home" / "login").write_text("cache")
+    m.clean()
+    assert list(m.server_dir.iterdir()) == []
+    assert (m.config_dir / "server.cfg").read_text() == "shipped"
+    assert (m.config_dir / "home" / "login").exists()

@@ -2,7 +2,7 @@
 
 One container = a small web control panel **plus** the game server it manages, as separate processes
 (the UI never blocks on the game, and a game crash never takes the UI down).
-UI: a sidebar of named game servers (several per game is fine), each with install / start / stop / restart / update with a progress bar,
+UI: a sidebar of named game servers (several per game is fine), each with install / start / stop / restart / update / clean reinstall (opt-in per game, keeps worlds and settings) with a progress bar,
 live console, config editor, port check and module-specific actions.
 
 Each game is a **module** (`panel/modules/<game>/`) implementing `GameModule`
