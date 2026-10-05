@@ -3,7 +3,7 @@
 Facts (SteamDB / Steam community): Windows-only Unity server (the exe is 32-bit; SteamDB wrongly implies 64-bit), anonymous
 download, launch args `-batchmode -nographics +serverid X +servercfg server.cfg`,
 steam_appid.txt must be 383790, default ports TCP/UDP 7776-7778 and 443.
-Everything Steam-account related (login) lives here, not in the panel core.
+Anonymous login is enough: no Steam account is needed to download or to list publicly.
 """
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ STATE_RE = re.compile(r"Update state \(0x[0-9a-f]+\) ([a-z ]+), progress: ([\d.]
 SELF_UPDATE_RE = re.compile(r"\[\s*(\d+)%\]\s+(Downloading|Extracting|Installing)")
 PHASES = {"downloading": "Downloading", "verifying update": "Verifying", "verifying install": "Verifying",
           "committing": "Finishing", "reconfiguring": "Preparing", "preallocating": "Preparing"}
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{2,64}$")
-GUARD_RE = re.compile(r"^[A-Za-z0-9]{0,10}$")
 
 
 class TheShip(GameModule):
@@ -145,19 +143,3 @@ class TheShip(GameModule):
                 "-logFile", f"{self.server_id}/tsrds_output.txt"]
         return LaunchSpec(argv, self.server_dir, {
             **self._home_env(), "WINEPREFIX": str(self.config_dir / "wine32"), "WINEARCH": "win32", "WINEDEBUG": "-all"})
-
-    # -- steam login (UNVERIFIED that this satisfies the game's SteamAPI_Init) ----
-    def actions(self):
-        return {"steam_login": self._steam_login}
-
-    async def _steam_login(self, params: dict, log: LogFn) -> dict:
-        user = str(params.get("username", ""))
-        password = str(params.get("password", ""))
-        guard = str(params.get("guard_code", ""))
-        if not USERNAME_RE.match(user) or not password or not GUARD_RE.match(guard):
-            raise ValueError("invalid username, password or guard code")
-        argv = [self.steamcmd, "+login", user, password] + ([guard] if guard else []) + ["+quit"]
-        # Never log argv: it contains the password.
-        log(f"[steam] logging in as {user} (credentials cached by steamcmd on success)")
-        code = await self._run(argv, lambda l: log(l.replace(password, "********")), self._home_env())
-        return {"ok": code == 0, "exit_code": code}

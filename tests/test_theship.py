@@ -27,22 +27,6 @@ def test_config_seeded_from_shipped_then_persisted(tmp_path, monkeypatch):
     assert (m.server_dir / "TSRDS_1" / "server.cfg").read_text() == "edited"
 
 
-async def test_steam_login_validates_and_redacts(tmp_path):
-    import stat
-    fake = tmp_path / "steamcmd.sh"
-    fake.write_text("#!/bin/sh\necho \"args: $@\"\n")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    m = TheShip(tmp_path / "c", tmp_path / "s")
-    m.steamcmd = str(fake)
-    logs = []
-    import pytest
-    with pytest.raises(ValueError):
-        await m._steam_login({"username": "a b", "password": "x"}, logs.append)
-    r = await m._steam_login({"username": "jordan", "password": "hunter2"}, logs.append)
-    assert r["ok"]
-    assert not any("hunter2" in l for l in logs)
-
-
 def test_find_wine_prefers_available_binary_and_errors_clearly(monkeypatch):
     import pytest
     import shutil

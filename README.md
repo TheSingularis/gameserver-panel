@@ -57,8 +57,8 @@ Without the forwards the server ran but did **not** appear in the list, so the f
 - Verified on a real desktop (Docker, Arch): image builds; SteamCMD anonymous download; `TSRDedicated.exe` is a **32-bit**
   exe and runs under `wine32` (win32 prefix); the server binds UDP 7777/7778, appears in the public in-game list once ports are
   forwarded, and **a client on a different network (phone hotspot) joined with no errors**.
-- **No Steam account is needed.** The server logs on to Steam anonymously, so the panel's optional `steam_login` action is not required for
-  The Ship (it was run once during testing; the server listing does not depend on it).
+- **No Steam account is needed.** The server downloads and logs on to Steam anonymously, and the server listing does not depend on a login.
+  (An optional Steam sign-in action existed in early versions; it was removed because nothing needs it.)
 - Not yet verified: running on Unraid; the published ghcr image from CI; password-protected join; long-running stability.
 
 ## Dev

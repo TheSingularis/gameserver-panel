@@ -365,16 +365,6 @@ a.btn.primary { color: var(--accent-ink); }
 
       <div id="tpAdvanced" data-panel="advanced" hidden>
         <div class="card pad">
-          <div class="adv-b" id="steamBox" hidden>
-            <h3 class="eyebrow">Steam sign-in</h3>
-            <p class="muted" style="margin:0;font-size:13.5px">Not needed for The Ship, which signs in to Steam anonymously. Kept for games that need an account. The password goes straight to SteamCMD and is not stored by the panel.</p>
-            <form class="field" id="steamForm" style="gap:8px;max-width:360px">
-              <input class="input" id="su" placeholder="Steam username" autocomplete="username" aria-label="Steam username">
-              <input class="input" id="sp" type="password" placeholder="Password" autocomplete="current-password" aria-label="Steam password">
-              <input class="input" id="sg" placeholder="Steam Guard code (if asked)" autocomplete="one-time-code" aria-label="Steam Guard code">
-              <button class="btn" type="submit">Sign in with SteamCMD</button>
-            </form>
-          </div>
           <div class="adv-b" id="startupBox">
             <h3 class="eyebrow">Startup</h3>
             <label class="row" style="gap:8px;font-weight:600"><input type="checkbox" id="autoStart"> Start this server automatically with the container</label>
@@ -629,7 +619,6 @@ async function openServer(sid) {
   $("#crumb").textContent = "Games / " + d.game;
   $("#srvIcon").replaceChildren(iconEl(d.icon, d.game, 32));
   showName(d.name);
-  $("#steamBox").hidden = !d.actions.includes("steam_login");
   $("#tabConfig").hidden = !d.config_files.length;
   if (S.tab === "config" && !d.config_files.length) S.tab = "console";
   setTab(S.tab);
@@ -981,15 +970,6 @@ $("#editor").addEventListener("keydown", (e) => {
 $("#cfgSave").onclick = () => saveCfg(false);
 $("#cfgSaveRestart").onclick = () => saveCfg(true);
 $("#cfgRevert").onclick = () => { $("#editor").value = S.cfgOriginal; markDirty(); if (!S.cfgRaw) renderCfgForm(); };
-
-/* ---------- steam (module action) ---------- */
-$("#steamForm").onsubmit = async (e) => {
-  e.preventDefault();
-  try {
-    const r = await api("POST", `/api/servers/${S.sid}/actions/steam_login`, { username: $("#su").value, password: $("#sp").value, guard_code: $("#sg").value });
-    $("#sp").value = ""; $("#sg").value = ""; toast(r.ok ? "SteamCMD sign-in succeeded" : "Sign-in failed. Check the log.", !r.ok);
-  } catch (err) { toast(err.message, true); }
-};
 
 /* ---------- boot ---------- */
 const pageBuild = () => { const c = (document.querySelector('meta[name="panel-build"]') || {}).content || ""; const [commit, built] = c.split("|"); return { commit: commit || "dev", built: built || "" }; };
