@@ -130,6 +130,8 @@ class Supervisor:
 
     async def _install(self, restart_after: bool, clean: bool) -> None:
         async with self._lock:
+            if clean and self.module.persistent_paths is None:  # refuse before stopping a running server
+                raise RuntimeError(f"{self.module.name} can't be cleaned safely: it hasn't declared which files hold saves")
             was_running = self.state == RUNNING
             await self._stop_locked()
             self.state = INSTALLING

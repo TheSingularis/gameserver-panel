@@ -95,3 +95,14 @@ async def test_install_does_not_retry_other_failures(tmp_path):
     m.steamcmd = str(fake)
     with pytest.raises(RuntimeError, match="exited with 5"):
         await m.install(lambda l: None)
+
+
+def test_clean_keeps_ban_list_and_map_cycle(tmp_path):
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    d = m.server_dir / "TSRDS_1"
+    d.mkdir(parents=True)
+    for f in ("banned_user.cfg", "mapcycle.txt", "server.cfg"):
+        (d / f).write_text("x")
+    (m.server_dir / "TSRDedicated.exe").write_text("x")
+    m.clean(lambda l: None)
+    assert sorted(p.name for p in m.server_dir.rglob("*") if p.is_file()) == ["banned_user.cfg", "mapcycle.txt"]

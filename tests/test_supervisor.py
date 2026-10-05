@@ -121,3 +121,21 @@ async def test_reinstall_failure_leaves_server_stopped(tmp_path):
     with pytest.raises(RuntimeError):
         await s.reinstall()
     assert s.state == "stopped" and any("reinstall failed" in l for l in s.tail())
+
+
+async def test_reinstall_keeps_declared_worlds_and_refuses_undeclared(tmp_path):
+    m = FakeModule(tmp_path / "config", tmp_path / "server")
+    m.persistent_paths = ["saves/world1", "players.db"]
+    for f in ("saves/world1/level.dat", "saves/world2/tmp.dat", "players.db", "junk.bin", "bin/game.exe"):
+        (tmp_path / "server" / f).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "server" / f).write_text("x")
+    m.installed = True
+    s = Supervisor(m, stop_timeout=2)
+    await s.reinstall()
+    left = sorted(str(p.relative_to(tmp_path / "server")) for p in (tmp_path / "server").rglob("*") if p.is_file())
+    assert left == ["players.db", "saves/world1/level.dat"]
+
+    m.persistent_paths = None  # a game that never declared what to keep
+    with pytest.raises(RuntimeError, match="can't be cleaned safely"):
+        await s.reinstall()
+    assert (tmp_path / "server" / "players.db").exists() and s.state == "stopped"

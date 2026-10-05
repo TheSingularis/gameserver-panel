@@ -37,6 +37,9 @@ class GameModule:
     ports: list[Port] = []
     # Editable config files, relative to the module's config dir.
     config_files: list[str] = []
+    # Paths under server_dir that hold player data (worlds, saves, bans) and must survive a clean reinstall.
+    # None = not declared yet, which makes "clean & reinstall" refuse; use [] for a game with nothing to keep.
+    persistent_paths: list[str] | None = None
 
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
@@ -49,15 +52,34 @@ class GameModule:
         raise NotImplementedError
 
     def clean(self, log: LogFn) -> None:
-        """Delete the installed game files so install() starts from nothing (the config dir is left alone)."""
+        """Delete the installed game files so install() starts from nothing.
+
+        Anything under persistent_paths (worlds, saves, bans...) is kept, as is the config dir. A module that
+        has not declared persistent_paths cannot be cleaned: we can't know what is safe to delete.
+        """
+        if self.persistent_paths is None:
+            raise RuntimeError(f"{self.name} has not declared which files hold saves, so it can't be cleaned safely")
         d = self.server_dir
         if not d.is_dir():
             return
         if d.is_symlink() or d == d.parent or len(d.resolve().parts) < 3:
             raise RuntimeError(f"refusing to clean {d}")
-        for child in d.iterdir():
-            shutil.rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
-        log(f"[panel] removed game files in {d}")
+        keep = [Path(p) for p in self.persistent_paths]
+
+        def wipe(dir_: Path, rel: Path) -> None:
+            for child in dir_.iterdir():
+                r = rel / child.name
+                if any(r == k for k in keep):
+                    continue
+                if child.is_dir() and not child.is_symlink():
+                    if any(r in k.parents for k in keep):  # holds something to keep: wipe around it
+                        wipe(child, r)
+                    else:
+                        shutil.rmtree(child)
+                else:
+                    child.unlink()
+        wipe(d, Path())
+        log(f"[panel] removed game files in {d}" + (f" (kept: {', '.join(self.persistent_paths)})" if keep else ""))
 
     def launch_spec(self) -> LaunchSpec:
         raise NotImplementedError

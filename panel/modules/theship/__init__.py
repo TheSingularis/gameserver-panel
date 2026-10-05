@@ -42,6 +42,8 @@ class TheShip(GameModule):
         self.server_id = os.environ.get("SHIP_SERVER_ID", "TSRDS_1")
         self.cfg_name = "server.cfg"
         self.config_files = [self.cfg_name]
+        # Dedicated server is stateless apart from admin-edited lists (server.cfg lives on the config volume).
+        self.persistent_paths = [f"{self.server_id}/banned_user.cfg", f"{self.server_id}/mapcycle.txt"]
         self.steamcmd = os.environ.get("STEAMCMD", "/opt/steamcmd/steamcmd.sh")
 
     def _home_env(self) -> dict[str, str]:
