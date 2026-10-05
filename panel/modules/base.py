@@ -2,7 +2,7 @@
 
 A module owns everything game-specific: how to install/update, how to launch,
 which ports matter, which config files are editable, and any extra actions
-(e.g. The Ship's Steam login). The panel core knows nothing about any game.
+(e.g. an account sign-in, for a game that needs one). The panel core knows nothing about any game.
 """
 from __future__ import annotations
 
