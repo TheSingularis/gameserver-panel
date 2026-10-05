@@ -204,8 +204,10 @@ a.btn.primary { color: var(--accent-ink); }
 .cfg-layout { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: start; }
 .cfg-layout.single { grid-template-columns: minmax(0, 1fr); } .cfg-layout.single .cfg-nav { display: none; }
 .cfg-nav { position: sticky; top: 8px; display: grid; gap: 2px; }
-.cfg-navb { border: 0; background: transparent; text-align: left; padding: 6px 9px; border-radius: 7px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; }
+.cfg-navb { display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 7px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; }
 .cfg-navb:hover { background: var(--accent-soft); color: var(--accent); }
+.cfg-navb[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.cfg-badge { font-style: normal; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; text-align: center; border-radius: 9px; background: var(--warn); color: #151b25; font-size: 11px; font-weight: 700; }
 .cfg-sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 14px; scroll-margin-top: 8px; }
 .cfg-sec h3 { margin: 0; }
 .cfg-sec .field { gap: 4px; }
@@ -337,7 +339,7 @@ a.btn.primary { color: var(--accent-ink); }
             </div>
           </div>
           <div class="cfg-form" id="cfgForm" hidden>
-            <div class="cfg-layout" id="cfgLayout"><nav class="cfg-nav" id="cfgNav" aria-label="Config sections"></nav><div id="cfgSections"></div></div>
+            <div class="cfg-layout" id="cfgLayout"><nav class="cfg-nav" id="cfgNav" role="tablist" aria-orientation="vertical" aria-label="Config sections"></nav><div id="cfgSections"></div></div>
           </div>
           <textarea class="editor" id="editor" spellcheck="false" aria-label="Config file contents"></textarea>
           <div class="row" style="margin-top:12px">
@@ -869,8 +871,9 @@ function renderCfgForm() {
   $("#cfgLayout").classList.toggle("single", sections.length < 2);
   sections.forEach((sec, i) => {
     const id = "cfgsec" + i;
-    nav.append(el("button", { type: "button", class: "cfg-navb", text: sec.title, onclick: () => { document.getElementById(id).scrollIntoView({ behavior: "smooth", block: "start" }); } }));
-    const card = el("section", { class: "cfg-sec", id }, el("h3", { class: "eyebrow", text: sec.title }));
+    nav.append(el("button", { type: "button", role: "tab", class: "cfg-navb", "data-sec": id, "data-keys": sec.fields.map((f) => f.key).join(" "), onclick: () => showCfgSection(id, sec.title) },
+      el("span", { text: sec.title }), el("i", { class: "cfg-badge", hidden: "" })));
+    const card = el("section", { class: "cfg-sec", id, role: "tabpanel" }, el("h3", { class: "eyebrow", text: sec.title }));
     for (const f of sec.fields) {
       const cur = f.value, fid = "cf_" + f.key.replace(/\W/g, "_");
       const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); };
@@ -897,6 +900,21 @@ function renderCfgForm() {
     body.append(card);
   });
   if (!sections.length) body.append(el("p", { class: "muted", text: "No settings were recognised in this file. Use the raw view." }));
+  const first = sections.find((x) => x.title === S.cfgSec) || sections[0];  // keep the tab you were on across view switches
+  if (first) showCfgSection("cfgsec" + sections.indexOf(first), first.title);
+  updateCfgBadges();
+}
+function showCfgSection(id, title) {
+  S.cfgSec = title;
+  document.querySelectorAll("#cfgSections .cfg-sec").forEach((c) => { c.hidden = c.id !== id; });
+  document.querySelectorAll("#cfgNav .cfg-navb").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sec === id)));
+}
+function updateCfgBadges() {  // unsaved-change count per tab
+  const a = cfgParse(S.cfgOriginal), b = cfgParse($("#editor").value);
+  document.querySelectorAll("#cfgNav .cfg-navb").forEach((btn) => {
+    const n = btn.dataset.keys.split(" ").filter((k) => (a.has(k) ? a.get(k).value : null) !== (b.has(k) ? b.get(k).value : null)).length;
+    const i = btn.querySelector(".cfg-badge"); i.hidden = !n; i.textContent = n;
+  });
 }
 function setCfgView(raw) {
   S.cfgRaw = raw; store.set("cfgView", raw ? "raw" : "form");
@@ -915,6 +933,7 @@ const dirty = () => $("#editor").value !== S.cfgOriginal;
 const markDirty = () => {
   const d = $("#dirty"), n = dirty() ? cfgChanges() : 0;
   d.hidden = !dirty(); d.textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : "Unsaved changes";
+  if (!S.cfgRaw) updateCfgBadges();
 };
 async function openCfg(name, force) {
   if (!force && dirty() && !window.confirm("Discard unsaved changes?")) return;
