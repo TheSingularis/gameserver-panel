@@ -68,6 +68,7 @@ async def test_lifecycle_and_progress_field(ready):
     assert (await c.post(base + "/update")).status_code == 200
     assert (await c.post(base + "/start")).json()["state"] == "running"
     assert (await c.post(base + "/start")).status_code == 409
+    assert (await c.post(base + "/reinstall")).json()["state"] == "running"  # wipes, installs, restarts
     assert (await c.post(base + "/stop")).json()["state"] == "stopped"
     assert "installing" in (await c.get(base + "/logs")).json()["lines"]
 

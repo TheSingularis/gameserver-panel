@@ -70,3 +70,39 @@ async def test_steamcmd_progress_is_parsed_and_kept_out_of_the_log(tmp_path):
     await m.install(logs.append)
     assert progress == [(40.0, "Updating SteamCMD"), (12.5, "Downloading"), (99.0, "Verifying")]
     assert any("Success!" in l for l in logs) and not any("Update state" in l for l in logs)
+
+
+async def test_install_retries_once_on_missing_configuration(tmp_path):
+    import stat
+    fake = tmp_path / "steamcmd.sh"
+    marker = tmp_path / "ran"
+    fake.write_text(f"#!/bin/sh\nif [ -e {marker} ]; then echo ok; exit 0; fi\ntouch {marker}\nexit 8\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    m.steamcmd = str(fake)
+    logs = []
+    await m.install(logs.append)
+    assert any("retrying once" in l for l in logs)
+
+
+async def test_install_does_not_retry_other_failures(tmp_path):
+    import pytest
+    import stat
+    fake = tmp_path / "steamcmd.sh"
+    fake.write_text("#!/bin/sh\nexit 5\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    m.steamcmd = str(fake)
+    with pytest.raises(RuntimeError, match="exited with 5"):
+        await m.install(lambda l: None)
+
+
+def test_clean_keeps_ban_list_and_map_cycle(tmp_path):
+    m = TheShip(tmp_path / "c", tmp_path / "s")
+    d = m.server_dir / "TSRDS_1"
+    d.mkdir(parents=True)
+    for f in ("banned_user.cfg", "mapcycle.txt", "server.cfg"):
+        (d / f).write_text("x")
+    (m.server_dir / "TSRDedicated.exe").write_text("x")
+    m.clean(lambda l: None)
+    assert sorted(p.name for p in m.server_dir.rglob("*") if p.is_file()) == ["banned_user.cfg", "mapcycle.txt"]

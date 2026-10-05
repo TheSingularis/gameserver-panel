@@ -274,6 +274,7 @@ a.btn.primary { color: var(--accent-ink); }
           <button class="btn danger" id="bStop" type="button">Stop</button>
           <button class="btn" id="bRestart" type="button">Restart</button>
           <button class="btn ghost" id="bUpdate" type="button">Check for updates</button>
+          <button class="btn ghost" id="bReinstall" type="button" title="Deletes the game files and downloads them again; your config is kept">Clean &amp; reinstall</button>
         </div>
       </div>
 
@@ -629,12 +630,13 @@ function renderStatus() {
   if (s.progress) renderProgress($("#prog"), $("#progPhase"), $("#progPct"), $("#progTrack"), s.progress);
 
   const busy = !!S.pending || s.state === "installing" || s.state === "stopping", running = s.state === "running";
-  show("bInstall", !s.installed); show("bStart", s.installed && !running); show("bStop", s.installed); show("bRestart", s.installed); show("bUpdate", s.installed);
+  show("bInstall", !s.installed); show("bStart", s.installed && !running); show("bStop", s.installed); show("bRestart", s.installed); show("bUpdate", s.installed); show("bReinstall", s.installed);
   btn("bInstall", "Install game files", busy, S.pending === "update" || s.state === "installing");
   btn("bStart", "Start server", busy || running, S.pending === "start");
   btn("bStop", "Stop", busy || !running, S.pending === "stop");
   btn("bRestart", "Restart", busy || !running, S.pending === "restart");
   btn("bUpdate", "Check for updates", busy, s.installed && s.state === "installing");
+  btn("bReinstall", "Clean & reinstall", busy, S.pending === "reinstall");
   $("#notice").hidden = s.installed || s.state === "installing";
   $("#cfgSaveRestart").disabled = busy || !running;
 }
@@ -642,11 +644,11 @@ const show = (id, on) => { $("#" + id).hidden = !on; };
 function btn(id, label, off, spin) {
   const b = $("#" + id); b.disabled = off || spin;
   if (b.classList.contains("armed")) return;
-  b.textContent = ""; if (spin) b.append(el("span", { class: "spin" }), " "); b.append(spin ? label.replace(/^(Install|Check for|Start|Stop|Restart)/, (m) => ({ Install: "Installing", "Check for": "Checking for", Start: "Starting", Stop: "Stopping", Restart: "Restarting" }[m])) : label);
+  b.textContent = ""; if (spin) b.append(el("span", { class: "spin" }), " "); b.append(spin ? label.replace(/^(Install|Check for|Clean &|Start|Stop|Restart)/, (m) => ({ Install: "Installing", "Check for": "Checking for", "Clean &": "Cleaning &", Start: "Starting", Stop: "Stopping", Restart: "Restarting" }[m])) : label);
 }
 const armed = {};
 async function run(name, confirmText) {
-  const id = { start: "bStart", stop: "bStop", restart: "bRestart", update: S.detail && !sv().installed ? "bInstall" : "bUpdate" }[name], b = $("#" + id);
+  const id = { start: "bStart", stop: "bStop", restart: "bRestart", reinstall: "bReinstall", update: S.detail && !sv().installed ? "bInstall" : "bUpdate" }[name], b = $("#" + id);
   if (confirmText && !armed[name]) {
     b.classList.add("armed"); b.textContent = confirmText;
     armed[name] = setTimeout(() => { delete armed[name]; b.classList.remove("armed"); renderStatus(); }, 3500); return;
@@ -656,7 +658,7 @@ async function run(name, confirmText) {
   const poll = setInterval(pollServers, 700);  // keep the progress bar moving while the request is open
   try {
     await api("POST", `/api/servers/${sid}/${name}`);
-    toast({ start: "Server started", stop: "Server stopped", restart: "Server restarted", update: "Game files are up to date" }[name]);
+    toast({ start: "Server started", stop: "Server stopped", restart: "Server restarted", update: "Game files are up to date", reinstall: "Game files reinstalled" }[name]);
   } catch (e) { toast(e.message, true); }
   clearInterval(poll); S.pending = null; await pollServers();
 }
@@ -665,6 +667,7 @@ $("#bStart").onclick = () => run("start");
 $("#bStop").onclick = () => run("stop", "Confirm stop");
 $("#bRestart").onclick = () => run("restart", "Confirm restart");
 $("#bUpdate").onclick = () => run("update", sv() && sv().state === "running" ? "Confirm: restarts server" : null);
+$("#bReinstall").onclick = () => run("reinstall", "Confirm: deletes game files");
 $("#bRemove").onclick = async () => {
   const b = $("#bRemove");
   if (!armed.remove) { b.classList.add("armed"); b.textContent = "Confirm remove"; armed.remove = setTimeout(() => { delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this server"; }, 3500); return; }

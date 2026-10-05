@@ -10,6 +10,7 @@ class FakeModule(GameModule):
     id, name, description = "fake", "Fake", "A fake game"
     ports = [Port(1000, 1001, "udp")]
     config_files = ["fake.cfg"]
+    persistent_paths: list[str] = []
 
     def __init__(self, config_dir: Path, server_dir: Path, script="import time;print('hello',flush=True);time.sleep(60)"):
         super().__init__(config_dir, server_dir)
