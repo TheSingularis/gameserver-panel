@@ -6,6 +6,7 @@ installs keep their files where they are: a legacy /data/config + /data/server l
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -39,10 +40,11 @@ class Server:
     server_dir: Path
     module: GameModule
     supervisor: Supervisor
+    autostart: bool = False  # start with the container (see ServerManager.run_autostart)
 
     def summary(self) -> dict:
         return {"id": self.id, "module": self.module_id, "name": self.name, "game": self.module.name,
-                "icon": self.icon, "description": self.module.description, **self.supervisor.status()}
+                "icon": self.icon, "autostart": self.autostart, "description": self.module.description, **self.supervisor.status()}
 
 
 class ServerManager:
@@ -71,12 +73,14 @@ class ServerManager:
         for e in entries:
             info = self.catalog.get(e["module"])
             if info and info.factory:
-                self._instantiate(e["id"], clean_name(e.get("name"), info.name), info,
-                                  self.data_dir / e["config"], self.data_dir / e["server"])
+                srv = self._instantiate(e["id"], clean_name(e.get("name"), info.name), info,
+                                        self.data_dir / e["config"], self.data_dir / e["server"])
+                srv.autostart = bool(e.get("autostart", False))
 
     def _entries(self) -> list[dict]:
         rel = lambda p: str(p.relative_to(self.data_dir))
-        return [{"id": s.id, "name": s.name, "module": s.module_id, "config": rel(s.config_dir), "server": rel(s.server_dir)}
+        return [{"id": s.id, "name": s.name, "module": s.module_id, "config": rel(s.config_dir), "server": rel(s.server_dir),
+                 "autostart": s.autostart}
                 for s in self.servers.values()]
 
     def _save(self, entries: list[dict] | None = None) -> None:
@@ -128,6 +132,39 @@ class ServerManager:
         srv.name = clean_name(name, srv.name)
         self._save()
         return srv
+
+    def set_autostart(self, sid: str, on: bool) -> Server:
+        srv = self.get(sid)
+        srv.autostart = bool(on)
+        self._save()
+        return srv
+
+    async def run_autostart(self, delay: float, stagger: float, sleep=asyncio.sleep) -> None:
+        """Container just came up: wait `delay`, then start each auto-start server in sidebar order, `stagger` apart.
+
+        A server that is not installed is skipped without costing a stagger gap; one that fails to start logs the
+        error to its own console and the rest still go. Runs once, so a server you stop by hand stays stopped.
+        """
+        queue = [s.id for s in self.servers.values() if s.autostart]
+        if not queue:
+            return
+        await sleep(delay)
+        started = False
+        for sid in queue:
+            srv = self.servers.get(sid)  # may have been removed or switched off during the wait
+            if not srv or not srv.autostart:
+                continue
+            if not srv.module.is_installed():
+                srv.supervisor.log("[panel] auto-start skipped: game files are not installed yet")
+                continue
+            if started:
+                await sleep(stagger)
+            started = True
+            try:
+                srv.supervisor.log("[panel] auto-starting with the container")
+                await srv.supervisor.start()
+            except Exception as e:  # keep going: one bad server must not block the rest
+                srv.supervisor.log(f"[panel] auto-start failed: {e}")
 
     async def remove(self, sid: str) -> None:
         srv = self.get(sid)

@@ -125,3 +125,13 @@ async def test_page_carries_its_build_and_api_reports_it(client, monkeypatch):
 async def test_version_endpoint_when_logged_in(ready, monkeypatch):
     monkeypatch.setenv("PANEL_COMMIT", "abcdef0123456789")
     assert (await ready.get("/api/version")).json() == {"commit": "abcdef0", "built": ""}
+
+
+async def test_autostart_toggle_via_api(ready):
+    assert (await ready.get("/api/servers/fake")).json()["autostart"] is False
+    r = await ready.patch("/api/servers/fake", json={"autostart": True})
+    assert r.json()["autostart"] is True
+    d = (await ready.get("/api/servers/fake")).json()
+    assert d["autostart"] is True and d["autostart_delay"] == 60 and d["autostart_stagger"] == 30
+    assert (await ready.patch("/api/servers/fake", json={"autostart": "yes"})).status_code == 400
+    assert (await ready.patch("/api/servers/fake", json={"autostart": False})).json()["name"] == "Fake"  # name untouched
