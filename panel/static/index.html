@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Game Server Panel</title>
+<meta name="panel-build" content="">
 <style>
 /* Layout: left sidebar listing every game server (icon, name, status lamp), page header with the
    main actions, a full-width progress strip, then sub-tabs (Console, Config, Network, Advanced).
@@ -93,6 +94,8 @@ a.btn.primary { color: var(--accent-ink); }
 .side a:hover, .side .sbtn:hover { color: var(--ink); background: var(--surface); }
 .side a[aria-current="page"] { background: var(--sel); color: var(--ink); }
 .side a .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.side .ver { padding: 6px 12px 0; font-size: 11.5px; color: var(--muted); opacity: .8; user-select: all; }
+.side .ver.stale { color: var(--warn); opacity: 1; cursor: pointer; }
 .side .foot { margin-top: auto; padding-top: 12px; display: grid; gap: 3px; }
 .main { padding: 24px 28px 56px; min-width: 0; max-width: 1180px; width: 100%; }
 @media (max-width: 860px) {
@@ -260,6 +263,7 @@ a.btn.primary { color: var(--accent-ink); }
     <div class="foot">
       <button class="sbtn" id="themeBtn" type="button" title="Switch theme">Theme: Auto</button>
       <button class="sbtn" id="logoutBtn" type="button">Log out</button>
+      <div class="ver mono" id="ver" title="Build this page is running"></div>
     </div>
   </nav>
 
@@ -949,11 +953,21 @@ $("#steamForm").onsubmit = async (e) => {
 };
 
 /* ---------- boot ---------- */
+const pageBuild = () => { const c = (document.querySelector('meta[name="panel-build"]') || {}).content || ""; const [commit, built] = c.split("|"); return { commit: commit || "dev", built: built || "" }; };
+async function showVersion() {  // the page's own build, and a warning when the server has been updated since it loaded
+  const v = $("#ver"), mine = pageBuild(), label = (b) => "build " + b.commit + (b.built ? " · " + b.built : "");
+  v.className = "ver mono"; v.textContent = label(mine); v.onclick = null;
+  try {
+    const live = await api("GET", "/api/version");
+    if (live.commit !== mine.commit) { v.classList.add("stale"); v.textContent = `${label(mine)} · new build ${live.commit}, click to reload`; v.onclick = () => location.reload(); }
+  } catch (_) {}
+}
 async function boot() {
   stopAll();
   try { S.servers = (await api("GET", "/api/servers")).servers; } catch (_) { return; }
   $("#login").hidden = true; $("#app").hidden = false;
   await route();
+  showVersion();
   tick(pollServers, 2000);
 }
 api("GET", "/api/servers").then(boot).catch(showLogin);
