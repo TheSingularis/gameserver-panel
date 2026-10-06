@@ -2,7 +2,7 @@
 
 Facts (SteamDB / Steam community): Windows-only Unity server (the exe is 32-bit; SteamDB wrongly implies 64-bit), anonymous
 download, launch args `-batchmode -nographics +serverid X +servercfg server.cfg`,
-steam_appid.txt must be 383790, default ports TCP/UDP 7776-7778 and 443.
+steam_appid.txt must be 383790, default ports UDP 7777-7778 (TCP 7776-7778 optional).
 Anonymous login is enough: no Steam account is needed to download or to list publicly.
 """
 from __future__ import annotations
@@ -42,7 +42,6 @@ class TheShip(GameModule):
     ports = [
         Port(7777, 7778, "udp", "game and query traffic (verified: forwarding these made the server public)"),
         Port(7776, 7778, "tcp", "forwarded in the verified setup; not proven necessary", required=False),
-        Port(443, 443, "tcp+udp", "named in community docs; not forwarded and the server still listed", required=False),
     ]
 
     def __init__(self, config_dir: Path, server_dir: Path):
