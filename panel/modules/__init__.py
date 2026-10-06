@@ -20,6 +20,7 @@ class ModuleInfo:
     tags: tuple[str, ...] = ()
     factory: Callable[[Path, Path], GameModule] | None = None  # None = coming soon
     icon: str | None = None  # remote URL; a bundled panel/static/icons/<id>.png|jpg|svg takes precedence
+    options: tuple[dict, ...] = ()  # choices asked for when adding a server (see GameModule.create_options)
 
     @property
     def status(self) -> str:
@@ -36,6 +37,11 @@ def _minecraft(config_dir: Path, server_dir: Path) -> GameModule:
     return Minecraft(config_dir, server_dir)
 
 
+def _minecraft_options() -> tuple[dict, ...]:
+    from .minecraft import Minecraft
+    return tuple(Minecraft.create_options)
+
+
 def _demo(config_dir: Path, server_dir: Path) -> GameModule:
     from .demo import Demo
     return Demo(config_dir, server_dir)
@@ -50,8 +56,8 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
                    # it from Steam at runtime, nothing is bundled; offline it falls back to the grey letter tile.
                    "https://shared.fastly.steamstatic.com/community_assets/images/apps/383790/de54185795014585bc27f4649f85f926f7ea63e5.jpg"),
         ModuleInfo("minecraft", "Minecraft: Java Edition",
-                   "Java Edition server as Paper (plugins, faster) or Vanilla (Mojang's own). Accept the EULA once, then start.",
-                   ("Java", "Paper or Vanilla", "TCP 25565"), _minecraft),
+                   "Java Edition server as Paper (plugins, faster), Vanilla (Mojang's own) or your own modpack server zip (Forge, NeoForge, Fabric). Accept the EULA once, then start.",
+                   ("Java", "Paper, Vanilla or modpack", "TCP 25565"), _minecraft, None, _minecraft_options()),
     ]
     if demo:
         items.append(ModuleInfo("demo", "Demo game",
