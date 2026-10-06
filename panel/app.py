@@ -64,7 +64,7 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         yield
         task.cancel()
 
-    app = FastAPI(title="gameserver-panel", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(title="Kosmos", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.manager = mgr
 
     def require_auth(request: Request) -> None:
