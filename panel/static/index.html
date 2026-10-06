@@ -157,6 +157,7 @@ a.btn.primary { color: var(--accent-ink); }
 .facts { display: flex; gap: 8px 28px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
 .facts b { color: var(--ink); font-weight: 650; }
 .notice.prompt .btn { margin-left: 10px; vertical-align: middle; }
+.notice.prompt .prompt-row + .prompt-row { margin-top: 10px; }
 .notice.prompt a { margin-right: 4px; }
 .notice { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13.5px; margin-bottom: 14px; }
 
@@ -386,6 +387,14 @@ a.btn.primary { color: var(--accent-ink); }
               <button class="btn danger" id="bReinstall" type="button">Clean &amp; reinstall</button>
             </div>
           </div>
+          <div class="adv-b" id="packBox" hidden>
+            <h3 class="eyebrow">Server pack</h3>
+            <p class="muted" style="margin:0;font-size:13.5px">Upload a modpack's server zip to install it or replace the current one. Mods and configs are replaced; the world, ops, whitelist and ban lists are kept. Stop the server first.</p>
+            <div class="row">
+              <button class="btn" id="bPackUpload" type="button">Upload server zip</button>
+              <input type="file" id="packFile" accept=".zip" hidden>
+            </div>
+          </div>
           <div class="adv-b">
             <h3 class="eyebrow">Remove from panel</h3>
             <p class="muted" style="margin:0;font-size:13.5px">Stops the server and removes it from the sidebar. Downloaded game files and config stay on disk.</p>
@@ -424,6 +433,38 @@ async function api(method, path, body) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || r.statusText);
   return j;
+}
+/* Upload a file as the raw request body, with byte progress (fetch cannot report upload progress). */
+function uploadFile(sid, file, onPct) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/servers/${sid}/upload`);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onPct(Math.round(e.loaded * 100 / e.total)); };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch (_) {}
+      if (x.status === 401) { showLogin(); reject(new Error("Please log in again.")); }
+      else if (x.status >= 200 && x.status < 300) resolve(j);
+      else reject(new Error(j.detail || `The upload failed (${x.status}).`));
+    };
+    x.onerror = () => reject(new Error("The upload was interrupted."));
+    x.send(file);
+  });
+}
+async function refreshDetail() {
+  const sid = S.sid; if (!sid) return;
+  try { const d = await api("GET", "/api/servers/" + sid); if (S.sid === sid) { S.detail = d; renderPrompt(); renderStatus(); } } catch (_) {}
+}
+/* Pick a zip, upload it to the open server, show byte progress on `label` (a button), then reload the page state. */
+async function pickAndUpload(input, button, idle) {
+  const f = input.files[0]; input.value = ""; if (!f) return;
+  const sid = S.sid; button.disabled = true;
+  try {
+    await uploadFile(sid, f, (pct) => { button.textContent = pct < 100 ? `Uploading ${pct}%` : "Unpacking..."; });
+    toast("Server pack installed");
+  } catch (e) { toast(e.message, true); }
+  button.textContent = idle; button.disabled = false;
+  await pollServers(); await refreshDetail();
 }
 function toast(msg, bad) {
   const t = document.createElement("div");
@@ -589,15 +630,32 @@ async function loadGames() {
     const nameIn = el("input", { class: "input", maxlength: "40", "aria-label": "Server name" });
     const go = el("button", { class: "btn primary small", type: "submit", text: "Create server" });
     const cancel = el("button", { class: "btn ghost small", type: "button", text: "Cancel" });
-    create.append(nameIn, go, cancel);
+    const picks = {};
+    const optEls = (g.options || []).map((o) => {
+      const sel = el("select", { class: "input", "aria-label": o.label });
+      for (const c of o.choices) sel.append(el("option", { value: c, text: (o.labels && o.labels[c]) || c }));
+      sel.value = o.default; picks[o.key] = sel; return sel;
+    });
+    const zipIn = el("input", { type: "file", accept: ".zip", "aria-label": "Modpack server zip", hidden: "" });
+    if (picks.flavor) picks.flavor.onchange = () => { zipIn.hidden = picks.flavor.value !== "pack"; };
+    create.append(...optEls, nameIn, zipIn, go, cancel);
     const open = el("button", { class: "btn small primary", type: "button", text: g.servers ? "Add another" : "Add server" });
     if (soon) { open.textContent = "Coming soon"; open.disabled = true; open.className = "btn small"; }
     open.onclick = () => { nameIn.value = g.servers ? `${g.name} ${g.servers + 1}` : g.name; create.hidden = false; open.hidden = true; nameIn.focus(); nameIn.select(); };
     cancel.onclick = () => { create.hidden = true; open.hidden = false; };
     create.onsubmit = async (e) => {
       e.preventDefault(); go.disabled = true;
-      try { const sv = await api("POST", "/api/servers", { module: g.id, name: nameIn.value }); toast(`${sv.name} added`); await pollServers(); location.hash = sv.id; }
-      catch (err) { toast(err.message, true); go.disabled = false; }
+      try {
+        const options = Object.fromEntries(Object.entries(picks).map(([k, v]) => [k, v.value]));
+        const sv = await api("POST", "/api/servers", { module: g.id, name: nameIn.value, options });
+        toast(`${sv.name} added`);
+        if (!zipIn.hidden && zipIn.files[0]) {  // a pack zip chosen up front: send it now (or do it later on the server page)
+          go.textContent = "Uploading 0%";
+          try { await uploadFile(sv.id, zipIn.files[0], (pct) => { go.textContent = pct < 100 ? `Uploading ${pct}%` : "Unpacking..."; }); toast("Server pack installed"); }
+          catch (e) { toast(e.message + " You can upload it from the server page.", true); }
+        }
+        await pollServers(); location.hash = sv.id;
+      } catch (err) { toast(err.message, true); go.disabled = false; go.textContent = "Create server"; }
     };
     box.append(el("div", { class: "grow-row" },
       iconEl(g.icon, g.name, 40),
@@ -673,21 +731,26 @@ function renderFacts(s) {
 }
 
 let lastState = null;
-function renderPrompt() {  // things a game needs from you before it can run (e.g. accepting the Minecraft EULA)
-  const box = $("#prompt"), p = ((S.detail && S.detail.prompts) || [])[0];
-  box.hidden = !p; box.textContent = "";
-  if (!p) return;
-  box.append(el("span", { text: p.text + " " }));
-  if (p.link) box.append(el("a", { href: p.link, target: "_blank", rel: "noopener noreferrer", text: "Read it" }), " ");
-  box.append(el("button", { class: "btn primary", type: "button", text: p.button, onclick: async (e) => {
-    e.target.disabled = true;
-    try {
-      const sid = S.sid;
-      await api("POST", `/api/servers/${sid}/actions/${p.action}`, {});
-      const d = await api("GET", "/api/servers/" + sid);
-      if (S.sid === sid) { S.detail = d; renderPrompt(); }
-    } catch (err) { toast(err.message, true); e.target.disabled = false; }
-  } }));
+function renderPrompt() {  // things a game needs from you before it can run (accept the Minecraft EULA, upload a pack...)
+  const box = $("#prompt"), list = (S.detail && S.detail.prompts) || [];
+  box.hidden = !list.length; box.textContent = "";
+  for (const p of list) {
+    const row = el("div", { class: "prompt-row" }, el("span", { text: p.text + " " }));
+    if (p.link) row.append(el("a", { href: p.link, target: "_blank", rel: "noopener noreferrer", text: "Read it" }), " ");
+    if (p.kind === "upload") {
+      const input = el("input", { type: "file", accept: ".zip", hidden: "" });
+      const b = el("button", { class: "btn primary", type: "button", text: p.button, onclick: () => input.click() });
+      input.onchange = () => pickAndUpload(input, b, p.button);
+      row.append(b, input);
+    } else {
+      row.append(el("button", { class: "btn primary", type: "button", text: p.button, onclick: async (e) => {
+        e.target.disabled = true;
+        try { await api("POST", `/api/servers/${S.sid}/actions/${p.action}`, {}); await refreshDetail(); }
+        catch (err) { toast(err.message, true); e.target.disabled = false; }
+      } }));
+    }
+    box.append(row);
+  }
 }
 function renderStatus() {
   const s = sv(); if (!s) return;
@@ -708,6 +771,9 @@ function renderStatus() {
   btn("bUpdate", "Check for updates", busy, s.installed && s.state === "installing");
   btn("bReinstall", "Clean & reinstall", busy, S.pending === "reinstall");
   renderAutostart(s);
+  show("packBox", !!(S.detail && S.detail.upload_accept));
+  $("#bPackUpload").disabled = busy || s.state === "running";
+  $("#bReinstall").hidden = !!(S.detail && S.detail.can_reinstall === false);
   $("#notice").hidden = s.installed || s.state === "installing";
   $("#cfgSaveRestart").disabled = busy || !running;
 }
@@ -764,6 +830,8 @@ $("#bUpdate").onclick = async () => {
 $("#bReinstall").onclick = async () => {
   if (await confirmModal("Clean & reinstall?", "This deletes all downloaded game files and downloads them again. Your config is kept. The server is stopped while this runs and started again afterwards if it was running.", "Delete and reinstall", true)) run("reinstall");
 };
+$("#bPackUpload").onclick = () => $("#packFile").click();
+$("#packFile").onchange = () => pickAndUpload($("#packFile"), $("#bPackUpload"), "Upload server zip");
 $("#bRemove").onclick = async () => {
   const b = $("#bRemove");
   if (!armed.remove) { b.classList.add("armed"); b.textContent = "Confirm remove"; armed.remove = setTimeout(() => { delete armed.remove; b.classList.remove("armed"); b.textContent = "Remove this server"; }, 3500); return; }

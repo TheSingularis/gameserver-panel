@@ -18,6 +18,7 @@ from .manager import ServerManager
 from .oidc import STATE_COOKIE, STATE_TTL, Oidc, OidcConfig, OidcError
 
 STATIC = Path(__file__).parent / "static"
+MAX_UPLOAD = 4 * 1024**3  # largest upload accepted (a modpack server zip)
 log = logging.getLogger("uvicorn.error")  # shows up in the container log
 
 
@@ -156,7 +157,8 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     @app.post("/api/servers", dependencies=protected)
     async def add_server(body: dict):
         try:
-            return mgr.add(str(body.get("module", "")), body.get("name")).summary()
+            opts = body.get("options")
+            return mgr.add(str(body.get("module", "")), body.get("name"), opts if isinstance(opts, dict) else None).summary()
         except ValueError as e:
             raise HTTPException(409, str(e))
 
@@ -237,6 +239,40 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(str(body.get("content", "")))
         return {"ok": True, "note": "restart the server to apply"}
+
+    @app.post("/api/servers/{sid}/upload", dependencies=protected)
+    async def upload(sid: str, request: Request):
+        """Raw request body = the file (a pack zip). Streamed to disk so a multi-GB pack never sits in memory."""
+        s = server(sid)
+        if not s.module.upload_accept:
+            raise HTTPException(404, f"{s.module.name} does not take uploads")
+        if s.supervisor.state not in ("stopped", "crashed"):
+            raise HTTPException(409, f"stop the server first (it is {s.supervisor.state})")
+        declared = int(request.headers.get("content-length") or 0)
+        if declared > MAX_UPLOAD:
+            raise HTTPException(413, f"the file is larger than the {MAX_UPLOAD >> 30} GiB limit")
+        tmp_dir = settings.data_dir / ".uploads"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp = tmp_dir / f"{sid}-{os.getpid()}.part"
+        size = 0
+        try:
+            with tmp.open("wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_UPLOAD:
+                        raise HTTPException(413, f"the file is larger than the {MAX_UPLOAD >> 30} GiB limit")
+                    f.write(chunk)
+            if not size:
+                raise HTTPException(400, "no file received")
+            try:
+                await s.supervisor.upload(tmp)
+            except RuntimeError as e:
+                raise HTTPException(409, str(e))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        finally:
+            tmp.unlink(missing_ok=True)
+        return {"ok": True, **s.summary()}
 
     @app.post("/api/servers/{sid}/actions/{name}", dependencies=protected)
     async def action(sid: str, name: str, body: dict):
