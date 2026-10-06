@@ -97,3 +97,11 @@ def test_theship_icon_is_the_runtime_steam_url_not_a_bundled_file():
     from panel.manager import STATIC_ICONS
     assert catalog()["theship"].icon.endswith("/community_assets/images/apps/383790/de54185795014585bc27f4649f85f926f7ea63e5.jpg")
     assert not list(STATIC_ICONS.glob("theship.*"))  # fetched by the browser at runtime, nothing bundled
+
+
+def test_minecraft_icon_is_a_pinned_runtime_url_not_a_bundled_file():
+    from panel.modules import catalog
+    from panel.manager import STATIC_ICONS
+    icon = catalog()["minecraft"].icon
+    assert icon.startswith("https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons@") and icon.endswith("/png/minecraft.png")
+    assert not list(STATIC_ICONS.glob("minecraft.*"))
