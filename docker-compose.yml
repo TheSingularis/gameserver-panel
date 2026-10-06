@@ -1,7 +1,7 @@
 # Production / Unraid: pulls the prebuilt image. Watchtower picks it up via the label below.
 services:
   kosmos:
-    image: ghcr.io/thesingularis/gameserver-panel:latest
+    image: ghcr.io/thesingularis/kosmos:latest
     container_name: kosmos
     restart: unless-stopped
     network_mode: host        # real ports, no Docker NAT in the way of Steam/server list
