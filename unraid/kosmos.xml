@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>kosmos</Name>
-  <Repository>ghcr.io/thesingularis/gameserver-panel:latest</Repository>
-  <Registry>https://ghcr.io/thesingularis/gameserver-panel</Registry>
+  <Repository>ghcr.io/thesingularis/kosmos:latest</Repository>
+  <Registry>https://ghcr.io/thesingularis/kosmos</Registry>
   <Network>host</Network>
   <Privileged>false</Privileged>
   <Support>https://github.com/TheSingularis/gameserver-panel</Support>
