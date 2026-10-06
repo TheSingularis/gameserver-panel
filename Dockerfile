@@ -24,12 +24,15 @@ RUN dpkg --add-architecture i386 \
 RUN mkdir -p /opt/steamcmd \
  && curl -fsSL https://media.steampowered.com/client/installer/steamcmd_linux.tar.gz | tar -xz -C /opt/steamcmd
 
-# Minecraft Java servers need Java 25 for current releases; Debian bookworm only ships 17, so use Temurin's JRE.
+# Minecraft needs a different Java per game version (8 for <=1.16, 17 for 1.18-1.20.4, 21 for 1.20.5-1.21.x, 25 for 26.x), and
+# Debian bookworm only ships 17, so install Temurin JREs side by side as /opt/java/<major>; the panel picks one per server.
 RUN case "$(uname -m)" in x86_64) A=x64;; aarch64) A=aarch64;; *) echo "no Java build for $(uname -m)" >&2; exit 1;; esac \
- && mkdir -p /opt/java \
- && curl -fsSL "https://api.adoptium.net/v3/binary/latest/25/ga/linux/${A}/jre/hotspot/normal/eclipse" | tar -xz -C /opt/java --strip-components=1 \
- && /opt/java/bin/java -version
-ENV JAVA_HOME=/opt/java PATH=/opt/java/bin:$PATH
+ && for V in 8 17 21 25; do \
+      mkdir -p /opt/java/$V \
+      && curl -fsSL "https://api.adoptium.net/v3/binary/latest/$V/ga/linux/${A}/jre/hotspot/normal/eclipse" | tar -xz -C /opt/java/$V --strip-components=1 \
+      && /opt/java/$V/bin/java -version; \
+    done
+ENV PATH=/opt/java/25/bin:$PATH
 
 WORKDIR /app
 COPY requirements.txt .

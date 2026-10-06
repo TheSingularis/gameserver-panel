@@ -62,7 +62,13 @@ plus a `version` (`latest` or an exact one such as `1.21.8`) and the Java `memor
 
 Worlds (`level-name`, plus its `_nether` and `_the_end`), `ops.json`, the whitelist and ban lists, `plugins/` and Paper's `config/` survive "Clean & reinstall";
 everything else is re-downloaded. The stop timeout is 90 s so a big world can save before the process is killed.
-Current Minecraft needs Java 25 and the image bundles it; pinning an old `version` that needs an older Java is not supported yet.
+The image bundles Java 8, 17, 21 and 25 (under `/opt/java/<major>`) and the panel picks the one a server's Minecraft version needs; set `java` in `panel.properties` to force one.
+
+**Modpacks (Forge, NeoForge, Fabric, ...).** Choose "Modpack server zip" as the server type when adding a Minecraft server and pick the zip, or upload it later from the
+Advanced tab. The panel unpacks it safely (no path escapes, no links), finds how to start it (`run.sh`/`start.sh`, Forge/NeoForge `unix_args.txt`, `fabric-server-launch.jar`, or a single jar)
+and runs it with the right Java. Uploading a new zip replaces the pack's files but keeps the world, ops, whitelist and ban lists, and your edited server settings. If the start file isn't
+recognised, set `start_file` in `panel.properties`. A pack is never re-downloaded, so "Clean & reinstall" is disabled for it; upload the zip again instead.
+Uploads are capped at 4 GiB and the Java download step in the image is not yet verified against Adoptium.
 Not yet run against the real download services or a real client (see the PR for what was and was not checked).
 
 ## Status: what is and isn't verified

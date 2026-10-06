@@ -121,6 +121,22 @@ class Supervisor:
             await self._stop_locked()
             await self._start_locked()
 
+    async def upload(self, path) -> None:
+        """Hand an uploaded file to the game module. The server must be stopped: an upload replaces game files."""
+        async with self._lock:
+            if self.state not in (STOPPED, CRASHED):
+                raise RuntimeError(f"stop the server first (it is {self.state})")
+            self.state = INSTALLING
+            self.progress = {"pct": None, "phase": "Unpacking"}
+            self.module.on_progress = self._set_progress
+            try:
+                await asyncio.to_thread(self.module.accept_upload, path, self.log)
+            except Exception as e:
+                self.log(f"[panel] upload failed: {e}")
+                raise
+            finally:
+                self.state, self.progress = STOPPED, None
+
     async def update(self, restart_after: bool = True) -> None:
         await self._install(restart_after, clean=False)
 
@@ -130,8 +146,9 @@ class Supervisor:
 
     async def _install(self, restart_after: bool, clean: bool) -> None:
         async with self._lock:
-            if clean and self.module.persistent_paths is None:  # refuse before stopping a running server
-                raise RuntimeError(f"{self.module.name} can't be cleaned safely: it hasn't declared which files hold saves")
+            blocker = self.module.reinstall_blocker() if clean else None
+            if blocker:  # refuse before stopping a running server
+                raise RuntimeError(blocker)
             was_running = self.state == RUNNING
             await self._stop_locked()
             self.state = INSTALLING
