@@ -17,4 +17,4 @@ services:
       # OIDC_PUBLIC_URL: http://tower:8080 # redirect URI = this + /auth/callback
       # OIDC_ALLOWED_GROUPS: gamers        # and/or OIDC_ALLOWED_USERS: jordan,sam
     volumes:
-      - ${PANEL_DATA_DIR:-/mnt/user/appdata/gameserver-panel}:/data   # Unraid appdata by default
+      - ${PANEL_DATA_DIR:-/mnt/user/appdata/kosmos}:/data   # Unraid appdata by default
