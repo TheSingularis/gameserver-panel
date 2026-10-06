@@ -156,6 +156,8 @@ a.btn.primary { color: var(--accent-ink); }
 @keyframes slide { from { margin-left: 0; } to { margin-left: 62%; } }
 .facts { display: flex; gap: 8px 28px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
 .facts b { color: var(--ink); font-weight: 650; }
+.notice.prompt .btn { margin-left: 10px; vertical-align: middle; }
+.notice.prompt a { margin-right: 4px; }
 .notice { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13.5px; margin-bottom: 14px; }
 
 /* ---- sub-tabs ---- */
@@ -314,6 +316,7 @@ a.btn.primary { color: var(--accent-ink); }
         <div class="track" id="progTrack"><div class="fill"></div></div>
       </section>
       <div class="notice" id="notice" hidden>Installing downloads the game server files and verifies them. You can leave this page; it keeps going.</div>
+      <div class="notice prompt" id="prompt" hidden></div>
       <div class="facts" id="facts"></div>
 
       <div class="tabs" role="tablist" id="subtabs">
@@ -630,7 +633,7 @@ async function openServer(sid) {
   for (const n of d.config_files) tabs.append(el("button", { class: "ctab", type: "button", role: "tab", "data-name": n, text: n, onclick: () => openCfg(n) }));
   S.cfgName = null; if (d.config_files.length) openCfg(d.config_files[0], true);
   $("#log").textContent = ""; lines = [];
-  renderStatus(); renderPorts([]); $("#renameForm").hidden = true; $("#renameBtn").hidden = false; $("#srvName").hidden = false;
+  renderStatus(); renderPrompt(); renderPorts([]); $("#renameForm").hidden = true; $("#renameBtn").hidden = false; $("#srvName").hidden = false;
   await Promise.all([loadTail(), refreshPorts()]);
   connectLog();
   tick(refreshPorts, 5000, true);
@@ -670,6 +673,22 @@ function renderFacts(s) {
 }
 
 let lastState = null;
+function renderPrompt() {  // things a game needs from you before it can run (e.g. accepting the Minecraft EULA)
+  const box = $("#prompt"), p = ((S.detail && S.detail.prompts) || [])[0];
+  box.hidden = !p; box.textContent = "";
+  if (!p) return;
+  box.append(el("span", { text: p.text + " " }));
+  if (p.link) box.append(el("a", { href: p.link, target: "_blank", rel: "noopener noreferrer", text: "Read it" }), " ");
+  box.append(el("button", { class: "btn primary", type: "button", text: p.button, onclick: async (e) => {
+    e.target.disabled = true;
+    try {
+      const sid = S.sid;
+      await api("POST", `/api/servers/${sid}/actions/${p.action}`, {});
+      const d = await api("GET", "/api/servers/" + sid);
+      if (S.sid === sid) { S.detail = d; renderPrompt(); }
+    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  } }));
+}
 function renderStatus() {
   const s = sv(); if (!s) return;
   if (lastState !== null && lastState !== s.state) setTimeout(refreshPorts, 1200);  // sockets appear shortly after the state flips

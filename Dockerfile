@@ -24,6 +24,13 @@ RUN dpkg --add-architecture i386 \
 RUN mkdir -p /opt/steamcmd \
  && curl -fsSL https://media.steampowered.com/client/installer/steamcmd_linux.tar.gz | tar -xz -C /opt/steamcmd
 
+# Minecraft Java servers need Java 25 for current releases; Debian bookworm only ships 17, so use Temurin's JRE.
+RUN case "$(uname -m)" in x86_64) A=x64;; aarch64) A=aarch64;; *) echo "no Java build for $(uname -m)" >&2; exit 1;; esac \
+ && mkdir -p /opt/java \
+ && curl -fsSL "https://api.adoptium.net/v3/binary/latest/25/ga/linux/${A}/jre/hotspot/normal/eclipse" | tar -xz -C /opt/java --strip-components=1 \
+ && /opt/java/bin/java -version
+ENV JAVA_HOME=/opt/java PATH=/opt/java/bin:$PATH
+
 WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
@@ -35,7 +42,7 @@ ENV HOME=/home/steam
 USER 99:100
 VOLUME /data
 
-# panel UI + The Ship ports (TCP/UDP 7776-7778, 443)
-EXPOSE 8080/tcp 7776-7778/tcp 7776-7778/udp 443/tcp 443/udp
+# panel UI + The Ship ports (TCP/UDP 7776-7778) + Minecraft (TCP 25565)
+EXPOSE 8080/tcp 7776-7778/tcp 7776-7778/udp 25565/tcp
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/opt/venv/bin/python", "-m", "panel.main"]

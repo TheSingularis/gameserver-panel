@@ -97,7 +97,7 @@ class ServerManager:
 
     def _instantiate(self, sid: str, name: str, info: ModuleInfo, config_dir: Path, server_dir: Path) -> Server:
         module = info.factory(config_dir, server_dir)
-        srv = Server(sid, name, info.id, self.icon_for(info), config_dir, server_dir, module, Supervisor(module))
+        srv = Server(sid, name, info.id, self.icon_for(info), config_dir, server_dir, module, Supervisor(module, stop_timeout=module.stop_timeout or 20.0))
         self.servers[sid] = srv
         return srv
 
@@ -124,6 +124,7 @@ class ServerManager:
         sid = self._new_id(slugify(name))
         base = self.data_dir / "servers" / sid
         srv = self._instantiate(sid, name, info, base / "config", base / "server")
+        srv.module.prepare()
         self._save()
         return srv
 
