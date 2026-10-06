@@ -23,6 +23,7 @@ from ...archive import UnsafeArchive, safe_extract
 
 MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 PAPER_API = "https://fill.papermc.io/v3/projects/paper"
+_TEST_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests put a fake network here
 USER_AGENT = "gameserver-panel/1.0 (https://github.com/TheSingularis/gameserver-panel)"  # PaperMC requires a contact UA
 EULA_URL = "https://www.minecraft.net/en-us/eula"
 FLAVORS = ("paper", "vanilla", "pack")
@@ -32,6 +33,7 @@ PACK_MARKER = ".panel-pack.json"
 START_SCRIPTS = ("run.sh", "start.sh", "startserver.sh", "ServerStart.sh", "start-server.sh", "launch.sh")
 JAR = "server.jar"
 MARKER = ".panel-install.json"  # which flavor/version/build the jar is, so "update" knows if anything changed
+VERSION_CHOICE = re.compile(r"^(latest|\d+(\.\d+)*)$")  # what a person may ask for when creating a server
 SIMPLE_VERSION = re.compile(r"^\d+(\.\d+)*$")  # skips snapshots, pre-releases and release candidates
 MEMORY = re.compile(r"^\d{1,5}[MG]$", re.I)
 LEVEL_NAME = re.compile(r"^[\w .-]{1,64}$")
@@ -55,7 +57,7 @@ PANEL_DEFAULTS = """\
 # flavor: paper (plugins, faster), vanilla (Mojang's own) or pack (a modpack server zip you upload).
 # version: latest, or an exact one such as 1.21.8 (paper/vanilla only).
 flavor={flavor}
-version=latest
+version={version}
 memory=2G
 java=auto
 start_file=
@@ -162,20 +164,49 @@ class Minecraft(GameModule):
         ],
     }
     stop_timeout = 90.0  # saving a big world on shutdown can take a while; killing it mid-save corrupts chunks
-    create_options = [{"key": "flavor", "label": "Server type", "choices": list(FLAVORS), "default": "paper",
-                       "labels": {"paper": "Paper (plugins, faster)", "vanilla": "Vanilla (Mojang's own)",
-                                  "pack": "Modpack server zip (Forge, NeoForge, Fabric)"}}]
+    create_options = [
+        {"key": "flavor", "label": "Server type", "choices": list(FLAVORS), "default": "paper",
+         "labels": {"paper": "Paper (plugins, faster)", "vanilla": "Vanilla (Mojang's own)",
+                    "pack": "Modpack server zip (Forge, NeoForge, Fabric)"}},
+        # Free-form (any release), with a list the page loads from `option_choices`; a modpack brings its own version.
+        {"key": "version", "label": "Minecraft version", "default": "latest", "pattern": VERSION_CHOICE.pattern,
+         "hint": "use latest or a version like 1.21.8", "choices_from": True, "applies_when": {"flavor": ["paper", "vanilla"]}},
+    ]
 
     def __init__(self, config_dir: Path, server_dir: Path):
         super().__init__(config_dir, server_dir)
         self._transport: httpx.AsyncBaseTransport | None = None  # tests inject a fake network here
+
+    # -- version lists for the Add game page ---------------------------------
+    @staticmethod
+    async def option_choices(key: str, picks: dict, transport: httpx.AsyncBaseTransport | None = None) -> dict:
+        """Releases to offer for `key` ("version") given the other picks ({"flavor": ...}); newest first, plus which one "latest" means."""
+        flavor = picks.get("flavor")
+        if key != "version" or flavor not in ("paper", "vanilla"):
+            raise ValueError("no list of choices for that")
+        async with httpx.AsyncClient(transport=transport or _TEST_TRANSPORT, headers={"User-Agent": USER_AGENT},
+                                     follow_redirects=True, timeout=httpx.Timeout(15.0)) as client:
+            if flavor == "vanilla":
+                manifest = (await client.get(MOJANG_MANIFEST)).raise_for_status().json()
+                found = [v["id"] for v in manifest["versions"] if v.get("type") == "release" and SIMPLE_VERSION.fullmatch(v["id"])]
+                latest = manifest["latest"]["release"]
+            else:
+                listed = (await client.get(PAPER_API)).raise_for_status().json().get("versions", [])
+                flat = [v for g in (listed.values() if isinstance(listed, dict) else [listed]) for v in (g if isinstance(g, list) else [g])]
+                found = sorted({v for v in flat if isinstance(v, str) and SIMPLE_VERSION.fullmatch(v)}, key=version_key, reverse=True)
+                latest = found[0] if found else None
+        if not found:
+            raise RuntimeError("no versions were listed")
+        return {"choices": found, "latest": latest}
 
     # -- settings ----------------------------------------------------------
     def prepare(self, options: dict | None = None) -> None:
         """Create the settings files so the Config tab has something to show before the first install."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         flavor = (options or {}).get("flavor", "paper")
-        for name, text in (("server.properties", SERVER_DEFAULTS), ("panel.properties", PANEL_DEFAULTS.format(flavor=flavor))):
+        version = (options or {}).get("version", "latest") if flavor != "pack" else "latest"
+        for name, text in (("server.properties", SERVER_DEFAULTS),
+                           ("panel.properties", PANEL_DEFAULTS.format(flavor=flavor, version=version))):
             if not (self.config_dir / name).exists():
                 (self.config_dir / name).write_text(text)
 

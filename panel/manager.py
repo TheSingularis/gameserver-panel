@@ -137,11 +137,23 @@ class ServerManager:
         """Keep only the choices the game declared, and only values it offers."""
         out: dict = {}
         for opt in module.create_options:
+            when = opt.get("applies_when") or {}
+            if any(out.get(k) not in allowed for k, allowed in when.items()):
+                continue  # e.g. a modpack zip brings its own Minecraft version
             val = (options or {}).get(opt["key"], opt.get("default"))
-            if val not in opt["choices"]:
+            if "pattern" in opt:
+                if not isinstance(val, str) or not re.fullmatch(opt["pattern"], val):
+                    raise ValueError(f"{opt['label']}: {opt.get('hint', 'not a valid value')}")
+            elif val not in opt["choices"]:
                 raise ValueError(f"{opt['label']}: pick one of {', '.join(opt['choices'])}")
             out[opt["key"]] = val
         return out
+
+    async def choices(self, module_id: str, key: str, picks: dict) -> dict:
+        info = self.catalog.get(module_id)
+        if not info or not info.choices or not any(o["key"] == key and o.get("choices_from") for o in info.options):
+            raise ValueError("no list of choices for that")
+        return await info.choices(key, picks)
 
     def rename(self, sid: str, name: str) -> Server:
         srv = self.get(sid)
