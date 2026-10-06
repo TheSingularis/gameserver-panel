@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Game Server Panel</title>
+<title>Kosmos · Game servers</title>
 <meta name="panel-build" content="">
 <style>
 /* Layout: left sidebar listing every game server (icon, name, status bar), page header with the
@@ -87,6 +87,8 @@ a.btn.primary { color: var(--accent-ink); }
   position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: -.01em; padding: 2px 12px 14px; }
 .brand svg { color: var(--accent); flex: none; }
+.brand-name { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-name small { font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 .side .lab { padding: 14px 12px 4px; }
 .side a, .side .sbtn { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; color: var(--muted);
   text-decoration: none; font-weight: 600; background: none; border: 0; cursor: pointer; text-align: left; width: 100%; min-width: 0; }
@@ -249,7 +251,7 @@ a.btn.primary { color: var(--accent-ink); }
 <section id="login" class="login-wrap" hidden>
   <form class="login" id="loginForm">
     <div>
-      <div class="eyebrow">Game Server Panel</div>
+      <div class="eyebrow">Kosmos · Game servers</div>
       <h1>Welcome back</h1>
     </div>
     <a class="btn primary" id="ssoBtn" href="/auth/login" hidden>Sign in with SSO</a>
@@ -268,7 +270,7 @@ a.btn.primary { color: var(--accent-ink); }
     <div class="brand">
       <!-- "galaxy" icon from Lucide (https://lucide.dev), ISC License, Copyright (c) 2026 Lucide Icons and Contributors -->
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.005 15.108a5.041 6.52 28.25 00-8.008-6.217 5.041 6.52 28.25 008.008 6.217A11.884 7.288-60.76 014.029 7.001"/><path d="M17 21h.01"/><path d="M7 3h.01"/><path d="M7.997 8.891a11.885 7.288-60.756 0111.977 8.107"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
-      <span>Game Panel</span>
+      <div class="brand-name"><span>Kosmos</span><small>Game servers</small></div>
     </div>
     <div id="nav" style="display:contents"></div>
     <div class="foot">
@@ -713,7 +715,7 @@ async function openServer(sid) {
   closeServer(); S.sid = sid; S.pending = null; lastState = null;
   let d; try { d = await api("GET", "/api/servers/" + sid); } catch (e) { toast(e.message, true); return; }
   S.detail = d;
-  document.title = d.name + " · Game Server Panel";
+  document.title = d.name + " · Kosmos";
   $("#crumb").textContent = "Games / " + d.game;
   $("#srvIcon").replaceChildren(iconEl(d.icon, d.game, 32));
   showName(d.name);
@@ -739,7 +741,7 @@ function setTab(t) {
 document.querySelectorAll("#subtabs button").forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });
 
 /* rename in place */
-function showName(name) { $("#srvName").textContent = name; document.title = name + " · Game Server Panel"; }
+function showName(name) { $("#srvName").textContent = name; document.title = name + " · Kosmos"; }
 $("#renameBtn").onclick = () => { $("#srvName").hidden = true; $("#renameBtn").hidden = true; $("#renameForm").hidden = false; $("#renameIn").value = sv().name; $("#renameIn").focus(); $("#renameIn").select(); };
 const endRename = () => { $("#renameForm").hidden = true; $("#renameBtn").hidden = false; $("#srvName").hidden = false; };
 $("#renameCancel").onclick = endRename;
