@@ -55,12 +55,22 @@ class GameModule:
     # Paths under server_dir that hold player data (worlds, saves, bans) and must survive a clean reinstall.
     # None = not declared yet, which makes "clean & reinstall" refuse; use [] for a game with nothing to keep.
     persistent_paths: list[str] | None = None
+    # Seconds the game gets to shut down cleanly before it is killed; None = the panel's default.
+    stop_timeout: float | None = None
 
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
         self.server_dir = server_dir
         # Set by the supervisor while install() runs; modules call it as (percent 0-100 or None, phase text).
         self.on_progress: Callable[[float | None, str], None] = lambda pct, phase: None
+
+    def prepare(self) -> None:
+        """Called once when a server of this game is created, e.g. to write default settings files."""
+
+    def prompts(self) -> list[dict]:
+        """Things the user must do before the server can run. Each: {id, text, button, action, link?}; the UI shows them
+        above the console and calls POST .../actions/<action> when the button is pressed."""
+        return []
 
     async def install(self, log: LogFn) -> None:
         """Install or update the game server files. Must stream progress to log."""
@@ -116,4 +126,5 @@ class GameModule:
             "config_schema": {f: [asdict(x) for x in fs] for f, fs in self.config_schema.items()},
             "actions": sorted(self.actions()),
             "installed": self.is_installed(),
+            "prompts": self.prompts(),
         }

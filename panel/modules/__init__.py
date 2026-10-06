@@ -31,6 +31,11 @@ def _ship(config_dir: Path, server_dir: Path) -> GameModule:
     return TheShip(config_dir, server_dir)
 
 
+def _minecraft(config_dir: Path, server_dir: Path) -> GameModule:
+    from .minecraft import Minecraft
+    return Minecraft(config_dir, server_dir)
+
+
 def _demo(config_dir: Path, server_dir: Path) -> GameModule:
     from .demo import Demo
     return Demo(config_dir, server_dir)
@@ -45,8 +50,8 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
                    # it from Steam at runtime, nothing is bundled; offline it falls back to the grey letter tile.
                    "https://shared.fastly.steamstatic.com/community_assets/images/apps/383790/de54185795014585bc27f4649f85f926f7ea63e5.jpg"),
         ModuleInfo("minecraft", "Minecraft: Java Edition",
-                   "Vanilla and modded Java servers with world backups.",
-                   ("Java", "TCP 25565")),
+                   "Java Edition server as Paper (plugins, faster) or Vanilla (Mojang's own). Accept the EULA once, then start.",
+                   ("Java", "Paper or Vanilla", "TCP 25565"), _minecraft),
     ]
     if demo:
         items.append(ModuleInfo("demo", "Demo game",
