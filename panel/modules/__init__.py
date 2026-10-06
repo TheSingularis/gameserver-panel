@@ -57,7 +57,11 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
                    "https://shared.fastly.steamstatic.com/community_assets/images/apps/383790/de54185795014585bc27f4649f85f926f7ea63e5.jpg"),
         ModuleInfo("minecraft", "Minecraft: Java Edition",
                    "Java Edition server as Paper (plugins, faster), Vanilla (Mojang's own) or your own modpack server zip (Forge, NeoForge, Fabric). Accept the EULA once, then start.",
-                   ("Java", "Paper, Vanilla or modpack", "TCP 25565"), _minecraft, None, _minecraft_options()),
+                   ("Java", "Paper, Vanilla or modpack", "TCP 25565"), _minecraft,
+                   # Grass block from the dashboard-icons set (Apache-2.0 repo; the art is Mojang's, used only to identify the game),
+                   # pinned to a commit so it cannot change under us. The browser loads and caches it from jsDelivr at runtime,
+                   # nothing is bundled; if it cannot load, the grey letter tile shows instead.
+                   "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons@adca944175c9a3eb0471f78a4da87f237476d585/png/minecraft.png", _minecraft_options()),
     ]
     if demo:
         items.append(ModuleInfo("demo", "Demo game",
