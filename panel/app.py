@@ -154,6 +154,15 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     async def games():
         return {"games": mgr.available()}
 
+    @app.get("/api/games/{module_id}/choices/{key}", dependencies=protected)
+    async def game_choices(module_id: str, key: str, request: Request):
+        try:
+            return await mgr.choices(module_id, key, dict(request.query_params))
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        except Exception:  # the lists come from the internet: let the page fall back to a text field
+            raise HTTPException(502, "Could not load the version list.")
+
     @app.post("/api/servers", dependencies=protected)
     async def add_server(body: dict):
         try:
