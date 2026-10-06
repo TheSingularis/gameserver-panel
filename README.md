@@ -50,6 +50,21 @@ CGNAT (router WAN IP differs from your public IP) makes forwarding impossible; a
 Many routers cannot reach their own public IP from inside the LAN (no NAT loopback): test joining from outside (friend / phone hotspot), or favorite the LAN IP:7777.
 Without the forwards the server ran but did **not** appear in the list, so the forwards are what make it public.
 
+## Minecraft: Java Edition
+Add it from the Add game page. Pick the server type in the Config tab's `panel.properties`: `paper` (plugins, faster; the default) or `vanilla` (Mojang's own),
+plus a `version` (`latest` or an exact one such as `1.21.8`) and the Java `memory`. "Install" / "Check for updates" downloads the jar and verifies its checksum
+(Mojang's SHA-1, Paper's SHA-256). The server will not start until you accept Mojang's EULA with the button on the server page.
+
+| Port | Protocol | Status |
+|---|---|---|
+| 25565 | **TCP** | Java Edition clients connect here; change `server-port` in `server.properties` and forward that port instead |
+| 25565 | UDP | only if you turn on `enable-query` |
+
+Worlds (`level-name`, plus its `_nether` and `_the_end`), `ops.json`, the whitelist and ban lists, `plugins/` and Paper's `config/` survive "Clean & reinstall";
+everything else is re-downloaded. The stop timeout is 90 s so a big world can save before the process is killed.
+Current Minecraft needs Java 25 and the image bundles it; pinning an old `version` that needs an older Java is not supported yet.
+Not yet run against the real download services or a real client (see the PR for what was and was not checked).
+
 ## Status: what is and isn't verified
 - Tested here: panel core, auth, API, supervisor (start/stop/crash/force-kill/update/restart), Ship launch args, config
   persistence, UI via headless Chromium (`pytest`, 15 tests).
