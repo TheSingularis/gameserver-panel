@@ -35,7 +35,7 @@ ENV HOME=/home/steam
 USER 99:100
 VOLUME /data
 
-# panel UI + The Ship ports (TCP/UDP 7776-7778, 443)
-EXPOSE 8080/tcp 7776-7778/tcp 7776-7778/udp 443/tcp 443/udp
+# panel UI + The Ship ports (TCP/UDP 7776-7778)
+EXPOSE 8080/tcp 7776-7778/tcp 7776-7778/udp
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/opt/venv/bin/python", "-m", "panel.main"]

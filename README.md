@@ -43,7 +43,6 @@ Forward on your router to the host's LAN IP (give it a static IP / DHCP reservat
 |---|---|---|
 | 7777-7778 | **UDP** | **Verified**: the server binds UDP 7777 (game) and 7778; forwarding these made it appear in the public in-game list |
 | 7776-7778 | TCP | forwarded in the verified setup; whether TCP is required is not isolated yet |
-| 443 | TCP/UDP | community docs mention it; it was **not** forwarded and the server still listed, so likely not needed |
 
 The game port is set in `server.cfg` (the listed community servers use 7781); if you change it, forward that port instead.
 **Never forward the panel port (8080).** It is password-protected but meant for the LAN (or a VPN / reverse proxy with TLS).
