@@ -51,7 +51,7 @@ Many routers cannot reach their own public IP from inside the LAN (no NAT loopba
 Without the forwards the server ran but did **not** appear in the list, so the forwards are what make it public.
 
 ## Minecraft: Java Edition
-Add it from the Add game page. Pick the server type in the Config tab's `panel.properties`: `paper` (plugins, faster; the default) or `vanilla` (Mojang's own),
+Add it from the Add game page and pick the server type and Minecraft version there (the version list is loaded live; it falls back to a text field if it can't be fetched). Both can be changed later in the Config tab's `panel.properties`: `paper` (plugins, faster; the default) or `vanilla` (Mojang's own),
 plus a `version` (`latest` or an exact one such as `1.21.8`) and the Java `memory`. "Install" / "Check for updates" downloads the jar and verifies its checksum
 (Mojang's SHA-1, Paper's SHA-256). The server will not start until you accept Mojang's EULA with the button on the server page.
 

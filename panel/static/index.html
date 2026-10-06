@@ -631,23 +631,55 @@ async function loadGames() {
     const nameIn = el("input", { class: "input", maxlength: "40", "aria-label": "Server name" });
     const go = el("button", { class: "btn primary small", type: "submit", text: "Create server" });
     const cancel = el("button", { class: "btn ghost small", type: "button", text: "Cancel" });
-    const picks = {};
-    const optEls = (g.options || []).map((o) => {
-      const sel = el("select", { class: "input", "aria-label": o.label });
-      for (const c of o.choices) sel.append(el("option", { value: c, text: (o.labels && o.labels[c]) || c }));
-      sel.value = o.default; picks[o.key] = sel; return sel;
-    });
+    const picks = {}, fields = [];  // picks[key] = the control holding that option's value
+    for (const o of g.options || []) {
+      let node;
+      if (o.choices) {
+        const sel = el("select", { class: "input", "aria-label": o.label });
+        for (const c of o.choices) sel.append(el("option", { value: c, text: (o.labels && o.labels[c]) || c }));
+        sel.value = o.default; picks[o.key] = sel; node = sel;
+      } else {  // free-form (e.g. a Minecraft version): a dropdown of the real list when it loads, else a plain text field
+        const sel = el("select", { class: "input", "aria-label": o.label, hidden: "" });
+        const txt = el("input", { class: "input", "aria-label": o.label, value: o.default, placeholder: `${o.label}: ${o.hint || ""}`, maxlength: "20" });
+        node = el("span", { style: "display:contents" }, sel, txt);
+        picks[o.key] = { get value() { return sel.hidden ? txt.value.trim() : sel.value; }, sel, txt };
+      }
+      fields.push({ o, node });
+    }
     const zipIn = el("input", { type: "file", accept: ".zip", "aria-label": "Modpack server zip", hidden: "" });
-    if (picks.flavor) picks.flavor.onchange = () => { zipIn.hidden = picks.flavor.value !== "pack"; };
-    create.append(...optEls, nameIn, zipIn, go, cancel);
+    const lists = {};  // "<key>:<flavor>" -> the loaded list, so flipping between types doesn't refetch
+    async function refreshOptions() {
+      for (const { o, node } of fields) {
+        const on = Object.entries(o.applies_when || {}).every(([k, allowed]) => allowed.includes(picks[k].value));
+        node.hidden = !on;
+        if (node.tagName === "SPAN") node.style.display = on ? "contents" : "none";  // the wrapper must stay display:contents when shown
+        if (!on || !o.choices_from) continue;
+        const c = picks[o.key], flavor = picks.flavor && picks.flavor.value, id = `${o.key}:${flavor}`;
+        if (!(id in lists)) {
+          lists[id] = null;
+          try { lists[id] = await api("GET", `/api/games/${g.id}/choices/${o.key}?flavor=${encodeURIComponent(flavor)}`); } catch (_) { lists[id] = false; }
+        }
+        if (picks.flavor && picks.flavor.value !== flavor) continue;  // the person moved on while it loaded
+        const got = lists[id];
+        c.sel.hidden = !got; c.txt.hidden = !!got;
+        if (got) {
+          c.sel.textContent = "";
+          c.sel.append(el("option", { value: "latest", text: `Latest (${got.latest})` }),
+            ...got.choices.map((v) => el("option", { value: v, text: v })));
+        }
+      }
+      zipIn.hidden = !(picks.flavor && picks.flavor.value === "pack");
+    }
+    if (picks.flavor) picks.flavor.onchange = refreshOptions;
+    create.append(...fields.map((f) => f.node), nameIn, zipIn, go, cancel);
     const open = el("button", { class: "btn small primary", type: "button", text: g.servers ? "Add another" : "Add server" });
     if (soon) { open.textContent = "Coming soon"; open.disabled = true; open.className = "btn small"; }
-    open.onclick = () => { nameIn.value = g.servers ? `${g.name} ${g.servers + 1}` : g.name; create.hidden = false; open.hidden = true; nameIn.focus(); nameIn.select(); };
+    open.onclick = () => { refreshOptions(); nameIn.value = g.servers ? `${g.name} ${g.servers + 1}` : g.name; create.hidden = false; open.hidden = true; nameIn.focus(); nameIn.select(); };
     cancel.onclick = () => { create.hidden = true; open.hidden = false; };
     create.onsubmit = async (e) => {
       e.preventDefault(); go.disabled = true;
       try {
-        const options = Object.fromEntries(Object.entries(picks).map(([k, v]) => [k, v.value]));
+        const options = Object.fromEntries(fields.filter((f) => !f.node.hidden).map((f) => [f.o.key, picks[f.o.key].value]));
         const sv = await api("POST", "/api/servers", { module: g.id, name: nameIn.value, options });
         toast(`${sv.name} added`);
         if (!zipIn.hidden && zipIn.files[0]) {  // a pack zip chosen up front: send it now (or do it later on the server page)

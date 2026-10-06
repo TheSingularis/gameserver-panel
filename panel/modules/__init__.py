@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Awaitable, Callable
 
 from .base import GameModule
 
@@ -21,6 +21,7 @@ class ModuleInfo:
     factory: Callable[[Path, Path], GameModule] | None = None  # None = coming soon
     icon: str | None = None  # remote URL; a bundled panel/static/icons/<id>.png|jpg|svg takes precedence
     options: tuple[dict, ...] = ()  # choices asked for when adding a server (see GameModule.create_options)
+    choices: Callable[..., Awaitable[dict]] | None = None  # async (key, picks) -> {"choices": [...], "latest": ...} for options with choices_from
 
     @property
     def status(self) -> str:
@@ -35,6 +36,11 @@ def _ship(config_dir: Path, server_dir: Path) -> GameModule:
 def _minecraft(config_dir: Path, server_dir: Path) -> GameModule:
     from .minecraft import Minecraft
     return Minecraft(config_dir, server_dir)
+
+
+def _minecraft_choices(key: str, picks: dict):
+    from .minecraft import Minecraft
+    return Minecraft.option_choices(key, picks)
 
 
 def _minecraft_options() -> tuple[dict, ...]:
@@ -61,7 +67,7 @@ def catalog(demo: bool = False) -> dict[str, ModuleInfo]:
                    # Grass block from the dashboard-icons set (Apache-2.0 repo; the art is Mojang's, used only to identify the game),
                    # pinned to a commit so it cannot change under us. The browser loads and caches it from jsDelivr at runtime,
                    # nothing is bundled; if it cannot load, the grey letter tile shows instead.
-                   "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons@adca944175c9a3eb0471f78a4da87f237476d585/png/minecraft.png", _minecraft_options()),
+                   "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons@adca944175c9a3eb0471f78a4da87f237476d585/png/minecraft.png", _minecraft_options(), _minecraft_choices),
     ]
     if demo:
         items.append(ModuleInfo("demo", "Demo game",
