@@ -9,7 +9,7 @@
   <Overview>Kosmos: web control panel (start/stop/update/configure/console) for game servers. First module: The Ship: Remasted. Keep the panel port LAN-only; only forward the game ports.</Overview>
   <Category>GameServers: Tools:</Category>
   <Config Name="Watchtower" Target="com.centurylinklabs.watchtower.enable" Default="true" Description="Label so Watchtower (--label-enable) keeps this container updated" Type="Label" Display="advanced" Required="false">true</Config>
-  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/gameserver-panel" Mode="rw" Description="Server files, configs, wine prefix" Type="Path" Display="always" Required="true">/mnt/user/appdata/gameserver-panel</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/kosmos" Mode="rw" Description="Server files, configs, wine prefix" Type="Path" Display="always" Required="true">/mnt/user/appdata/kosmos</Config>
   <Config Name="Panel password" Target="PANEL_PASSWORD" Default="" Description="Admin password (min 8 chars). Optional once OIDC is set up." Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="Panel port" Target="PANEL_PORT" Default="8080" Description="Web UI port (host networking). LAN only." Type="Variable" Display="always" Required="true">8080</Config>
   <Config Name="OIDC issuer" Target="OIDC_ISSUER" Default="" Description="Optional SSO, e.g. https://keycloak.lan/realms/home" Type="Variable" Display="advanced" Required="false"></Config>
