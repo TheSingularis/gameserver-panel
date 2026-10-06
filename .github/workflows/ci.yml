@@ -25,7 +25,8 @@ jobs:
         with:
           context: .
           push: true
-          tags: "ghcr.io/thesingularis/gameserver-panel:latest"
+          tags: "ghcr.io/thesingularis/kosmos:latest"
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
             PANEL_COMMIT=${{ github.sha }}
             PANEL_BUILT=${{ steps.built.outputs.date }}
