@@ -114,7 +114,7 @@ class ServerManager:
             sid, n = f"{base[:26]}-{n}", n + 1
         return sid
 
-    def add(self, module_id: str, name: str | None = None) -> Server:
+    def add(self, module_id: str, name: str | None = None, options: dict | None = None) -> Server:
         info = self.catalog.get(module_id)
         if not info:
             raise ValueError("unknown game")
@@ -124,9 +124,24 @@ class ServerManager:
         sid = self._new_id(slugify(name))
         base = self.data_dir / "servers" / sid
         srv = self._instantiate(sid, name, info, base / "config", base / "server")
-        srv.module.prepare()
+        try:
+            srv.module.prepare(self._clean_options(srv.module, options))
+        except Exception:
+            del self.servers[sid]
+            raise
         self._save()
         return srv
+
+    @staticmethod
+    def _clean_options(module: GameModule, options: dict | None) -> dict:
+        """Keep only the choices the game declared, and only values it offers."""
+        out: dict = {}
+        for opt in module.create_options:
+            val = (options or {}).get(opt["key"], opt.get("default"))
+            if val not in opt["choices"]:
+                raise ValueError(f"{opt['label']}: pick one of {', '.join(opt['choices'])}")
+            out[opt["key"]] = val
+        return out
 
     def rename(self, sid: str, name: str) -> Server:
         srv = self.get(sid)
@@ -178,5 +193,5 @@ class ServerManager:
 
     def available(self) -> list[dict]:
         return [{"id": m.id, "name": m.name, "description": m.description, "tags": list(m.tags),
-                 "status": m.status, "icon": self.icon_for(m),
+                 "status": m.status, "icon": self.icon_for(m), "options": list(m.options),
                  "servers": sum(1 for x in self.servers.values() if x.module_id == m.id)} for m in self.catalog.values()]

@@ -57,6 +57,11 @@ class GameModule:
     persistent_paths: list[str] | None = None
     # Seconds the game gets to shut down cleanly before it is killed; None = the panel's default.
     stop_timeout: float | None = None
+    # Choices asked for when a server of this game is created, e.g. [{"key": "flavor", "label": "Server type",
+    # "choices": ["paper", "vanilla"], "default": "paper"}]; passed to prepare().
+    create_options: list[dict] = []
+    # File types the game takes as an upload on the server page (e.g. ".zip"); None = no upload.
+    upload_accept: str | None = None
 
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
@@ -64,8 +69,19 @@ class GameModule:
         # Set by the supervisor while install() runs; modules call it as (percent 0-100 or None, phase text).
         self.on_progress: Callable[[float | None, str], None] = lambda pct, phase: None
 
-    def prepare(self) -> None:
-        """Called once when a server of this game is created, e.g. to write default settings files."""
+    def prepare(self, options: dict | None = None) -> None:
+        """Called when a server of this game is created (with the user's create_options) and again before install/launch;
+        write default settings files here, never overwrite existing ones."""
+
+    def accept_upload(self, path: Path, log: LogFn) -> None:
+        """Take an uploaded file (already saved at `path`, deleted afterwards). Runs in a worker thread."""
+        raise RuntimeError(f"{self.name} does not take uploads")
+
+    def reinstall_blocker(self) -> str | None:
+        """Why a clean reinstall must be refused right now, or None when it is allowed."""
+        if self.persistent_paths is None:
+            return f"{self.name} has not declared which files hold saves, so it can't be cleaned safely"
+        return None
 
     def prompts(self) -> list[dict]:
         """Things the user must do before the server can run. Each: {id, text, button, action, link?}; the UI shows them
@@ -82,29 +98,34 @@ class GameModule:
         Anything under persistent_paths (worlds, saves, bans...) is kept, as is the config dir. A module that
         has not declared persistent_paths cannot be cleaned: we can't know what is safe to delete.
         """
-        if self.persistent_paths is None:
-            raise RuntimeError(f"{self.name} has not declared which files hold saves, so it can't be cleaned safely")
+        blocker = self.reinstall_blocker()
+        if blocker:
+            raise RuntimeError(blocker)
+        self.wipe(self.persistent_paths or [], log)
+
+    def wipe(self, keep_paths: list[str], log: LogFn) -> None:
+        """Delete everything in server_dir except the given relative paths."""
         d = self.server_dir
         if not d.is_dir():
             return
         if d.is_symlink() or d == d.parent or len(d.resolve().parts) < 3:
             raise RuntimeError(f"refusing to clean {d}")
-        keep = [Path(p) for p in self.persistent_paths]
+        keep = [Path(p) for p in keep_paths]
 
-        def wipe(dir_: Path, rel: Path) -> None:
+        def walk(dir_: Path, rel: Path) -> None:
             for child in dir_.iterdir():
                 r = rel / child.name
                 if any(r == k for k in keep):
                     continue
                 if child.is_dir() and not child.is_symlink():
                     if any(r in k.parents for k in keep):  # holds something to keep: wipe around it
-                        wipe(child, r)
+                        walk(child, r)
                     else:
                         shutil.rmtree(child)
                 else:
                     child.unlink()
-        wipe(d, Path())
-        log(f"[panel] removed game files in {d}" + (f" (kept: {', '.join(self.persistent_paths)})" if keep else ""))
+        walk(d, Path())
+        log(f"[panel] removed game files in {d}" + (f" (kept: {', '.join(keep_paths)})" if keep else ""))
 
     def launch_spec(self) -> LaunchSpec:
         raise NotImplementedError
@@ -127,4 +148,6 @@ class GameModule:
             "actions": sorted(self.actions()),
             "installed": self.is_installed(),
             "prompts": self.prompts(),
+            "upload_accept": self.upload_accept,
+            "can_reinstall": self.reinstall_blocker() is None,
         }
