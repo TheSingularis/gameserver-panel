@@ -187,6 +187,11 @@ a.btn.primary { color: var(--accent-ink); }
 .err { color: var(--bad); font-size: 13px; min-height: 1.3em; }
 
 /* ---- ports ---- */
+.pl-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.pl-add .input { flex: 1 1 180px; max-width: 320px; }
+.pl-sec + .pl-sec { margin-top: 22px; }
+.pl-sec h3 { margin-bottom: 8px; }
+.pl-empty { color: var(--muted); font-size: 13.5px; margin: 4px 0 0; }
 .ports { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .ports th { text-align: left; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 8px 8px 0; }
 .ports td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
@@ -336,6 +341,7 @@ a.btn.primary { color: var(--accent-ink); }
       <div class="tabs" role="tablist" id="subtabs">
         <button type="button" role="tab" data-tab="console">Console</button>
         <button type="button" role="tab" data-tab="config" id="tabConfig">Config</button>
+        <button type="button" role="tab" data-tab="players" id="tabPlayers" hidden>Players</button>
         <button type="button" role="tab" data-tab="network">Network</button>
         <button type="button" role="tab" data-tab="advanced">Advanced</button>
       </div>
@@ -353,6 +359,15 @@ a.btn.primary { color: var(--accent-ink); }
           <input class="input" id="cmdInput" type="text" placeholder="Type a command" aria-label="Console command" autocapitalize="off" spellcheck="false">
           <button class="btn primary" id="cmdSend" type="submit">Send</button>
         </form>
+      </div>
+
+      <div id="tpPlayers" data-panel="players" hidden>
+        <div class="card pad">
+          <p class="muted" id="plState" style="margin:0 0 12px;font-size:13.5px"></p>
+          <div class="cfg-warn" id="plErr" hidden style="margin-bottom:12px"></div>
+          <div class="ctabs" id="plTabs" role="tablist"></div>
+          <div id="plBody"></div>
+        </div>
       </div>
 
       <div id="tpConfig" data-panel="config" hidden>
@@ -734,7 +749,10 @@ async function openServer(sid) {
   $("#srvIcon").replaceChildren(iconEl(d.icon, d.game, 32));
   showName(d.name);
   $("#tabConfig").hidden = !d.config_files.length;
+  $("#tabPlayers").hidden = !d.players;
   if (S.tab === "config" && !d.config_files.length) S.tab = "console";
+  if (S.tab === "players" && !d.players) S.tab = "console";
+  S.pl = null;
   setTab(S.tab);
   const tabs = $("#cfgTabs"); tabs.textContent = "";
   for (const n of d.config_files) tabs.append(el("button", { class: "ctab", type: "button", role: "tab", "data-name": n, text: n, onclick: () => openCfg(n) }));
@@ -751,6 +769,63 @@ function setTab(t) {
   document.querySelectorAll("#subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
   document.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== t; });
   if (t === "console") { const b = $("#log"); if ($("#follow").checked) b.scrollTop = b.scrollHeight; }
+  if (t === "players") loadPlayers();
+}
+
+/* ---------- players: whitelist, operators, bans (games that keep such lists) ---------- */
+const PL_VIEWS = [["whitelist", "Whitelist"], ["ops", "Operators"], ["banned", "Banned"]];
+async function loadPlayers() {
+  const sid = S.sid; if (!S.detail || !S.detail.players) return;
+  try { const r = await api("GET", `/api/servers/${sid}/players`); if (S.sid !== sid) return; S.pl = r; $("#plErr").hidden = true; renderPlayers(); }
+  catch (e) { $("#plErr").textContent = e.message; $("#plErr").hidden = false; }
+}
+async function plAct(kind, action, value, extra = {}) {
+  try {
+    const r = await api("POST", `/api/servers/${S.sid}/players/${kind}/${action}`, { value, ...extra });
+    S.pl = r; renderPlayers(); toast(r.applied === "live" ? "Sent to the server. Its reply is in the console." : "Saved. It applies when the server starts.");
+  } catch (e) { toast(e.message, true); }
+}
+function renderPlayers() {
+  const pl = S.pl; if (!pl) return;
+  S.plView = S.plView || "whitelist";
+  $("#plState").textContent = pl.live ? "The server is running: changes apply instantly and the server's reply appears in the console."
+    : "The server is stopped: changes are saved to the lists and apply when it starts. Player names are looked up on Mojang.";
+  const tabs = $("#plTabs"); tabs.textContent = "";
+  for (const [id, label] of PL_VIEWS) tabs.append(el("button", { class: "ctab", type: "button", role: "tab", text: label, "aria-selected": String(S.plView === id), onclick: () => { S.plView = id; renderPlayers(); } }));
+  const body = $("#plBody"); body.textContent = "";
+  const kinds = S.plView === "banned" ? [["banned-players", "Players"], ["banned-ips", "IP addresses"]] : [[S.plView, null]];
+  for (const [kind, title] of kinds) body.append(plSection(kind, title, pl));
+}
+function plSection(kind, title, pl) {
+  const rows = pl.lists[kind] || [], isIp = kind === "banned-ips", key = isIp ? "ip" : "name", sec = el("section", { class: "pl-sec" });
+  if (title) sec.append(el("h3", { class: "eyebrow", text: title }));
+  if (kind === "whitelist" && !pl.info.whitelist_enabled) sec.append(el("div", { class: "cfg-warn", style: "margin-bottom:10px", text: "The whitelist is turned off, so these names are not enforced yet. Turn it on under Config, Access & network." }));
+  const cols = { whitelist: ["Player", "UUID"], ops: ["Operator", "Level", "Bypass player limit"], "banned-players": ["Player", "Reason", "Expires"], "banned-ips": ["IP address", "Reason", "Expires"] }[kind];
+  if (!rows.length) sec.append(el("p", { class: "pl-empty", text: "Nobody on this list." }));
+  else {
+    const t = el("table", { class: "ports" }, el("thead", {}, el("tr", {}, ...cols.map((c) => el("th", { text: c })), el("th", {}))), el("tbody"));
+    for (const r of rows) {
+      const cells = [el("td", { text: r[key] || "" })];
+      if (kind === "whitelist") cells.push(el("td", { class: "num", style: "font-size:12px;color:var(--muted)", text: r.uuid || "" }));
+      else if (kind === "ops") {
+        if (pl.live) cells.push(el("td", { text: String(r.level ?? ""), title: "Stop the server to change a level" }));
+        else {
+          const sel = el("select", { class: "input", style: "width:auto;min-height:30px", "aria-label": `Level for ${r.name}`, onchange: (e) => plAct(kind, "set_level", r.name, { level: Number(e.target.value) }) });
+          for (const n of [1, 2, 3, 4]) sel.append(el("option", { value: String(n), text: String(n) }));
+          sel.value = String(r.level ?? 4); cells.push(el("td", {}, sel));
+        }
+        cells.push(el("td", { text: r.bypassesPlayerLimit ? "Yes" : "No" }));
+      } else { cells.push(el("td", { text: r.reason || "" })); cells.push(el("td", { text: r.expires || "" })); }
+      cells.push(el("td", { style: "text-align:right" }, el("button", { class: "btn small ghost", type: "button", text: "Remove", onclick: () => plAct(kind, "remove", r[key]) })));
+      t.tBodies[0].append(el("tr", {}, ...cells));
+    }
+    sec.append(el("div", { class: "xscroll" }, t));
+  }
+  const name = el("input", { class: "input", placeholder: isIp ? "IP address to ban" : "Player name", autocomplete: "off", "aria-label": isIp ? "IP address" : "Player name", maxlength: "45" });
+  const reason = kind.startsWith("banned") ? el("input", { class: "input", placeholder: "Reason (optional)", autocomplete: "off", "aria-label": "Reason", maxlength: "100" }) : null;
+  const form = el("form", { class: "pl-add", onsubmit: async (e) => { e.preventDefault(); if (!name.value.trim()) return; await plAct(kind, "add", name.value.trim(), reason ? { reason: reason.value } : {}); } },
+    name, reason, el("button", { class: "btn primary", type: "submit", text: kind.startsWith("banned") ? "Ban" : "Add" }));
+  sec.append(form); return sec;
 }
 document.querySelectorAll("#subtabs button").forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });
 
@@ -803,7 +878,7 @@ function renderPrompt() {  // things a game needs from you before it can run (ac
 }
 function renderStatus() {
   const s = sv(); if (!s) return;
-  if (lastState !== null && lastState !== s.state) setTimeout(refreshPorts, 1200);  // sockets appear shortly after the state flips
+  if (lastState !== null && lastState !== s.state) { setTimeout(refreshPorts, 1200); if (S.tab === "players") loadPlayers(); }  // sockets appear shortly after the state flips
   lastState = s.state;
   $("#lamp").dataset.s = s.state;
   $("#stateWord").textContent = stateWord(s);
@@ -1153,7 +1228,7 @@ const markDirty = () => {
 async function openCfg(name, force) {
   if (!force && dirty() && !window.confirm("Discard unsaved changes?")) return;
   S.cfgName = name; const sid = S.sid;
-  document.querySelectorAll(".ctab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.name === name)));
+  document.querySelectorAll("#cfgTabs .ctab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.name === name)));
   try {
     const c = await api("GET", `/api/servers/${sid}/config/${encodeURIComponent(name)}`);
     if (S.sid !== sid) return;

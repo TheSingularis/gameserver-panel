@@ -69,6 +69,9 @@ class GameModule:
     upload_accept: str | None = None
     # True when the running game reads admin commands from its stdin; the console then shows a command box.
     console_input: bool = False
+    # True when the game keeps lists of players (who may join, operators, bans) the Players tab can manage; a module that
+    # sets it implements player_lists(), player_command() and player_edit() (see minecraft/players.py).
+    players: bool = False
 
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
@@ -157,5 +160,6 @@ class GameModule:
             "prompts": self.prompts(),
             "upload_accept": self.upload_accept,
             "console_input": self.console_input,
+            "players": self.players,
             "can_reinstall": self.reinstall_blocker() is None,
         }

@@ -20,6 +20,7 @@ import httpx
 
 from ..base import ConfigField, GameModule, LaunchSpec, LogFn, Port
 from ...archive import UnsafeArchive, safe_extract
+from .players import PlayersMixin
 
 MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 PAPER_API = "https://fill.papermc.io/v3/projects/paper"
@@ -128,7 +129,7 @@ def kind_of(entry: str) -> str:
     return "script" if entry.endswith(".sh") else "args" if entry.endswith(".txt") else "jar"
 
 
-class Minecraft(GameModule):
+class Minecraft(PlayersMixin, GameModule):
     id = "minecraft"
     name = "Minecraft: Java Edition"
     description = "Java Edition server, Paper (plugins, faster) or Vanilla (Mojang's own). Needs the EULA accepted once."

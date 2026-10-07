@@ -218,6 +218,43 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
             return handler
         app.post(f"/api/servers/{{sid}}/{_name}", dependencies=protected)(_make(_name))
 
+    # ---- player lists (whitelist, operators, bans) ---------------------------
+    def players_module(sid: str):
+        mod = server(sid).module
+        if not mod.players:
+            raise HTTPException(404, f"{mod.name} has no player lists")
+        return mod
+
+    async def players_payload(mod, sup):
+        return {**(await mod.player_lists()), "live": sup.state == "running" and mod.console_input}
+
+    @app.get("/api/servers/{sid}/players", dependencies=protected)
+    async def players(sid: str):
+        mod = players_module(sid)
+        try:
+            return await players_payload(mod, server(sid).supervisor)
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/api/servers/{sid}/players/{kind}/{action}", dependencies=protected)
+    async def players_change(sid: str, kind: str, action: str, body: dict):
+        mod, sup = players_module(sid), server(sid).supervisor
+        if sup.state not in ("running", "stopped", "crashed"):
+            raise HTTPException(409, f"server is {sup.state}; try again when it has settled")
+        try:
+            if sup.state == "running" and mod.console_input:  # the game applies it and writes its own files
+                await sup.send(mod.player_command(kind, action, body.get("value"), body))
+                await asyncio.sleep(0.7)  # let it write the list before we read it back
+                applied = "live"
+            else:
+                await mod.player_edit(kind, action, body.get("value"), body)
+                applied = "file"
+            return {**(await players_payload(mod, sup)), "applied": applied}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+
     @app.post("/api/servers/{sid}/command", dependencies=protected)
     async def command(sid: str, body: dict):
         sup = server(sid).supervisor
