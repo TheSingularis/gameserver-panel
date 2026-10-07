@@ -112,15 +112,47 @@ a.btn.primary { color: var(--accent-ink); }
 .side .ver.stale { color: var(--warn); opacity: 1; cursor: pointer; }
 .side .foot { margin-top: auto; padding-top: 12px; display: grid; gap: 3px; }
 .main { padding: 24px 28px 56px; min-width: 0; max-width: 1180px; width: 100%; }
+.tabbar, .sheet-bg { display: none; }
 @media (max-width: 860px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .side { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; height: auto; flex-direction: row; align-items: center; overflow-x: auto;
-    border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; gap: 4px; scrollbar-width: none; }
-  .side::-webkit-scrollbar { display: none; }
-  .brand, .side .lab { display: none; }
-  .side a, .side .sbtn { width: auto; flex: none; white-space: nowrap; }
-  .side .foot { margin: 0 0 0 auto; padding: 0; display: flex; flex: none; }
-  .main { padding: 18px 16px 48px; }
+  /* Phone layout: a bottom tab bar (Overview, Servers, Add, More) replaces the sidebar. The sidebar element
+     is reused as a bottom sheet, showing the server list or the Theme / Log out / build rows. */
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .main { padding: calc(18px + env(safe-area-inset-top, 0px)) 16px calc(88px + env(safe-area-inset-bottom, 0px)); }
+  .side { display: none; }
+  .side[data-sheet] { display: flex; flex-direction: column; position: fixed; top: auto; left: 0; right: 0; z-index: 30; max-height: 70vh; overflow-y: auto;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0;
+    padding: 10px 10px 8px; box-shadow: 0 -8px 28px rgba(0, 0, 0, .35); height: auto; }
+  .brand { display: none; }
+  .side a, .side .sbtn { min-height: 48px; }
+  .side .ver { padding: 10px 12px 4px; }
+  .side[data-sheet="servers"] a:not(.srow), .side[data-sheet="servers"] .foot { display: none; }
+  .side[data-sheet="more"] #nav { display: none !important; }
+  .side .foot { margin-top: 0; padding-top: 0; }
+  .sheet-bg { position: fixed; inset: 0; z-index: 25; background: rgba(0, 0, 0, .5); display: block; }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--side); border-top: 1px solid var(--line); padding: 4px 4px env(safe-area-inset-bottom, 0px); }
+  .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 56px; border: 0; border-radius: 10px;
+    background: none; color: var(--muted); font-size: 11.5px; font-weight: 650; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .tabbar button[aria-current="page"], .tabbar button[aria-expanded="true"] { color: var(--accent); }
+  .tabbar svg { width: 22px; height: 22px; }
+  #toasts { right: 16px; left: 16px; width: auto; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+
+  /* touch targets: 44px and up, inputs at 16px so iOS doesn't zoom on focus */
+  .btn, .btn.small { min-height: 44px; }
+  .input { min-height: 44px; font-size: 16px; }
+  .tools .input { min-height: 44px; font-size: 16px; max-width: none; }
+  .tabs button { min-height: 44px; flex: 1 1 auto; padding: 9px 4px; font-size: 13px; }
+  .tabs { gap: 0; }
+  .seg-tog button { min-height: 44px; padding: 0 18px; }
+  .ctab, .cfg-navb { min-height: 44px; display: inline-flex; align-items: center; }
+  .seg, .cfg-sec .field.check label, #tpAdvanced label.row { min-height: 44px; flex-wrap: nowrap; }
+  input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+  .page-h { align-items: stretch; }
+  .page-h > .spacer { display: none; }
+  #controls { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  #tpConfig .card > .row { display: grid; grid-template-columns: 1fr 1fr; }
+  #tpConfig .card > .row .btn { white-space: nowrap; padding: 0 10px; }
+  #tpConfig .card > .row .ghost, #tpConfig .card > .row .dirty { grid-column: 1 / -1; }
 }
 
 /* ---- pages ---- */
@@ -451,6 +483,14 @@ a.btn.primary { color: var(--accent-ink); }
       </div>
     </section>
   </main>
+  <div class="sheet-bg" id="sheetBg" hidden></div>
+  <!-- tab bar icons from Lucide (https://lucide.dev), ISC License, Copyright (c) 2026 Lucide Icons and Contributors -->
+  <nav class="tabbar" id="tabbar" aria-label="Main">
+    <button type="button" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Overview</button>
+    <button type="button" data-tab="servers" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>Servers</button>
+    <button type="button" data-tab="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+    <button type="button" data-tab="more" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>More</button>
+  </nav>
 </div>
 <dialog id="confirm" class="modal" aria-labelledby="cfTitle">
   <form method="dialog">
@@ -594,7 +634,35 @@ function renderNav() {
   nav.append(el("div", { class: "eyebrow lab", text: "Games" }));
   for (const sv of S.servers) { const a = link(sv.id, sv.name, iconEl(sv.icon, sv.game, 22)); a.classList.add("srow"); a.append(el("span", { class: "sbar", "data-s": sv.state, "aria-hidden": "true" })); }
   link("add", "Add game", el("span", { class: "dot", "data-s": "new" }));
+  renderTabbar();
 }
+/* phone layout: the tab bar and the bottom sheet (the sidebar element, shown as a sheet) */
+function setSheet(kind) {
+  const side = document.querySelector(".side");
+  if (kind) side.dataset.sheet = kind; else delete side.dataset.sheet;
+  $("#sheetBg").hidden = !kind;
+  renderTabbar();
+}
+function renderTabbar() {
+  const open = document.querySelector(".side").dataset.sheet || "";
+  const cur = S.route === "overview" ? "overview" : S.route === "add" ? "add" : "servers";
+  document.querySelectorAll("#tabbar button").forEach((b) => {
+    const t = b.dataset.tab, sheetTab = t === "servers" || t === "more";
+    if (sheetTab) b.setAttribute("aria-expanded", String(open === t));
+    if (open ? t === open : t === cur) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+}
+$("#tabbar").onclick = (e) => {
+  const t = e.target.closest("button")?.dataset.tab, open = document.querySelector(".side").dataset.sheet;
+  if (!t) return;
+  if (t === "servers" && !S.servers.length) { setSheet(null); location.hash = "add"; return; }
+  if (t === "servers" || t === "more") { setSheet(open === t ? null : t); return; }
+  setSheet(null);
+  if (location.hash.slice(1) === t || (t === "overview" && !location.hash)) window.scrollTo(0, 0); else location.hash = t;
+};
+$("#sheetBg").onclick = () => setSheet(null);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".side").dataset.sheet) setSheet(null); });
+
 function parseRoute() {
   const h = decodeURIComponent(location.hash.slice(1)) || "overview";
   S.route = h === "overview" || h === "add" || S.servers.some((s) => s.id === h) ? h : "overview";
@@ -604,6 +672,7 @@ async function route() {
   $("#pgOverview").hidden = S.route !== "overview";
   $("#pgAdd").hidden = S.route !== "add";
   $("#pgServer").hidden = S.route === "overview" || S.route === "add";
+  setSheet(null);
   renderNav();
   if (S.route === "add") loadGames();
   if (S.route === "overview") renderOverview();
