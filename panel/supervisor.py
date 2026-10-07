@@ -78,10 +78,28 @@ class Supervisor:
         import os
         self._proc = await asyncio.create_subprocess_exec(
             *spec.argv, cwd=spec.cwd, env={**os.environ, **spec.env},
+            stdin=asyncio.subprocess.PIPE if self.module.console_input else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             start_new_session=True)  # own process group so stop() reaches wine/xvfb children
         self.state, self.started_at, self.exit_code = RUNNING, time.time(), None
         self._reader = asyncio.create_task(self._pump(self._proc))
+
+    async def send(self, command: str) -> None:
+        """Type one console command into the running game and echo it into the log."""
+        command = command.strip()
+        if not self.module.console_input:
+            raise RuntimeError(f"{self.module.name} does not take console commands")
+        if not command or "\n" in command or "\r" in command:
+            raise ValueError("send one non-empty command at a time")
+        proc = self._proc
+        if not proc or not proc.stdin or self.state != RUNNING:
+            raise RuntimeError("server is not running")
+        self.log(f"> {command}")
+        try:
+            proc.stdin.write(command.encode() + b"\n")
+            await proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            raise RuntimeError("server is not running") from None
 
     async def _pump(self, proc: asyncio.subprocess.Process) -> None:
         assert proc.stdout

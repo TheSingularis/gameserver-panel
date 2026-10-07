@@ -139,3 +139,29 @@ async def test_reinstall_keeps_declared_worlds_and_refuses_undeclared(tmp_path):
     with pytest.raises(RuntimeError, match="can't be cleaned safely"):
         await s.reinstall()
     assert (tmp_path / "server" / "players.db").exists() and s.state == "stopped"
+
+
+ECHO = "import sys\nfor l in sys.stdin: print('got', l.strip(), flush=True)"
+
+
+async def test_send_reaches_stdin_and_is_echoed(tmp_path):
+    m = FakeModule(tmp_path / "c", tmp_path, script=ECHO)
+    m.installed, m.console_input = True, True
+    s = Supervisor(m, stop_timeout=2)
+    await s.start()
+    await s.send("  say hi ")
+    await wait_for(lambda: "got say hi" in s.tail())
+    assert "> say hi" in s.tail()
+    for bad in ("", "a\nb"):
+        with pytest.raises(ValueError):
+            await s.send(bad)
+    await s.stop()
+    with pytest.raises(RuntimeError):
+        await s.send("list")
+
+
+async def test_send_refused_when_game_has_no_console(sup):
+    await sup.start()
+    with pytest.raises(RuntimeError, match="does not take console commands"):
+        await sup.send("list")
+    await sup.stop()

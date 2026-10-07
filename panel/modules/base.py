@@ -67,6 +67,8 @@ class GameModule:
     create_options: list[dict] = []
     # File types the game takes as an upload on the server page (e.g. ".zip"); None = no upload.
     upload_accept: str | None = None
+    # True when the running game reads admin commands from its stdin; the console then shows a command box.
+    console_input: bool = False
 
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
@@ -154,5 +156,6 @@ class GameModule:
             "installed": self.is_installed(),
             "prompts": self.prompts(),
             "upload_accept": self.upload_accept,
+            "console_input": self.console_input,
             "can_reinstall": self.reinstall_blocker() is None,
         }
