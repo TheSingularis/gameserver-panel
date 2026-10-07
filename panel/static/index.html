@@ -183,6 +183,7 @@ a.btn.primary { color: var(--accent-ink); }
 .field { display: grid; gap: 6px; }
 .field label { font-size: 13px; font-weight: 600; }
 .input { width: 100%; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.input.ro { display: flex; align-items: center; background: transparent; border-style: dashed; color: var(--muted); }
 .input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .err { color: var(--bad); font-size: 13px; min-height: 1.3em; }
 
@@ -1010,7 +1011,7 @@ function cfgModel(text) {  // -> [{ title, fields: [{ key, label, type, help, op
   for (const d of declared) {  // module-declared labels/types win; declared keys missing from the file are offered too
     let f = sections.flatMap((x) => x.fields).find((x) => x.key === d.key);
     if (!f) { if (!cur) section("Settings"); f = { key: d.key, value: "", help: "" }; (sections.find((x) => x.title === "Settings") || cur).fields.push(f); }
-    Object.assign(f, { label: d.label, type: d.type, choices_from: d.choices_from, older_warning: d.older_warning, applies_when: d.applies_when || {} },
+    Object.assign(f, { label: d.label, type: d.type, choices_from: d.choices_from, older_warning: d.older_warning, readonly: d.readonly, applies_when: d.applies_when || {} },
       d.help ? { help: d.help } : {}, d.options && d.options.length ? { options: d.options.map((o) => ({ value: o, label: o })) } : {});
   }
   return sections;
@@ -1046,6 +1047,10 @@ function renderCfgForm() {
       const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); S.cfgDyn.filter((d) => f.key in d.f.applies_when).forEach(hydrateChoices); };
       const meta = [f.help ? el("span", { class: "help", text: f.help }) : null, el("span", { class: "key mono", text: f.key })];
       let input;
+      if (f.readonly) {  // chosen at creation and refused by the server afterwards: shown as a plain label
+        card.append(el("div", { class: "field" }, el("label", { text: f.label }), el("div", { class: "input ro", text: cur || "-" }), ...meta));
+        continue;
+      }
       if (f.type === "bool") {
         const st = boolStyle(cur) || BOOL_STYLES[0];
         input = el("input", { type: "checkbox", id: fid, onchange: (e) => set(e.target.checked ? st[0] : st[1]) });
@@ -1093,8 +1098,10 @@ function olderThanSaved(f, text, list) {  // the saved version when `text` goes 
 }
 function updateCfgWarn(e) {
   const text = $("#editor").value, list = cfgLists[cfgListKey(e.f, text)] || null, saved = e.f.older_warning && !e.wrap.hidden ? olderThanSaved(e.f, text, list) : null;
-  e.warn.hidden = !saved;
-  if (saved) e.warn.textContent = `Older than the saved ${saved}. Worlds saved by a newer version may not load, so back up first. Applied by Check for updates.`;
+  const now = (cfgVal(text, e.f.key) || "").trim(), pre = !e.wrap.hidden && list && (list.experimental || []).includes(now);
+  e.warn.hidden = !saved && !pre;
+  e.warn.textContent = [saved ? `Older than the saved ${saved}. Worlds saved by a newer version may not load, so back up first.` : "",
+    pre ? `Paper has no stable build for ${now} yet. Updating uses its newest beta, which may be buggy, so back up first.` : ""].filter(Boolean).join(" ");
 }
 async function hydrateChoices(e) {
   const text = $("#editor").value, tok = ++e.tok;
@@ -1112,7 +1119,7 @@ async function hydrateChoices(e) {
     input = el("input", { class: "input", id: e.fid, type: "text", autocomplete: "off", oninput: (ev) => set(ev.target.value) }); input.value = cur;
   } else {
     input = el("select", { class: "input", id: e.fid, onchange: (ev) => set(ev.target.value) });
-    const opts = [{ value: "latest", label: list.latest ? `latest (now ${list.latest})` : "latest" }, ...list.choices.map((v) => ({ value: v, label: v }))];
+    const opts = [{ value: "latest", label: list.latest ? `latest (now ${list.latest})` : "latest" }, ...list.choices.map((v) => ({ value: v, label: (list.experimental || []).includes(v) ? `${v} (no stable build yet)` : v }))];
     if (!opts.some((o) => o.value === cur) && cur !== "") opts.splice(1, 0, { value: cur, label: `${cur} (current, not in the list)` });
     for (const o of opts) input.append(el("option", { value: o.value, text: o.label }));
     input.value = cur === "" ? "latest" : cur;
@@ -1170,12 +1177,28 @@ async function confirmOlderVersions() {  // true when it is fine to save: nothin
   }
   return true;
 }
+function changedVersion(before, after) {  // the new value of a version-like setting (one with a list of releases) that this save changes, else null
+  const declared = ((S.detail && S.detail.config_schema) || {})[S.cfgName] || [];
+  for (const f of declared.filter((d) => d.choices_from && cfgApplies(d, after))) {
+    const was = (cfgVal(before, f.key) || "").trim(), now = (cfgVal(after, f.key) || "").trim();
+    if (was !== now && now) return now;
+  }
+  return null;
+}
 async function saveCfg(restart) {
   if (!(await confirmOlderVersions())) return;
+  const before = S.cfgOriginal, after = $("#editor").value;
   try {
-    await api("PUT", `/api/servers/${S.sid}/config/${encodeURIComponent(S.cfgName)}`, { content: $("#editor").value });
-    S.cfgOriginal = $("#editor").value; markDirty(); (S.cfgDyn || []).forEach(updateCfgWarn); toast("Config saved"); if (restart) await run("restart");
-  } catch (e) { toast(e.message, true); }
+    await api("PUT", `/api/servers/${S.sid}/config/${encodeURIComponent(S.cfgName)}`, { content: after });
+  } catch (e) { toast(e.message, true); return; }
+  S.cfgOriginal = after; markDirty(); (S.cfgDyn || []).forEach(updateCfgWarn); toast("Config saved");
+  const version = changedVersion(before, after);
+  if (version) {  // the jar only changes when an update runs, so offer it now (it restarts the server if it is running)
+    const running = sv() && sv().state === "running";
+    if (await confirmModal("Update to the new version now?", `Saved version ${version}. Updating downloads and verifies it${running ? " and restarts the server, so connected players will be disconnected" : ""}. Worlds and settings are kept; back up first if you are going older.`, "Update now", running)) { await run("update"); return; }
+    toast("Saved. Run Check for updates to apply the new version.");
+  }
+  if (restart) await run("restart");
 }
 $("#editor").oninput = markDirty;
 $("#editor").addEventListener("keydown", (e) => {
