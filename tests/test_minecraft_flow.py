@@ -118,3 +118,28 @@ async def test_the_api_refuses_a_flavor_change_but_saves_a_version_change(api):
     assert "flavor=paper" in (await api.get(url)).json()["content"]
     assert (await api.put(url, json={"content": text.replace("version=latest", "version=26.2")})).status_code == 200
     assert "version=26.2" in (await api.get(url)).json()["content"]
+
+
+def test_a_seed_chosen_at_creation_is_written_once_and_blank_stays_random(tmp_path):
+    mgr = ServerManager(tmp_path, modules=catalog())
+    mgr.add("minecraft", "Seeded", {"flavor": "vanilla", "version": "latest", "seed": "  glacier peak 42 "})
+    mgr.add("minecraft", "Random", {"flavor": "paper", "version": "latest", "seed": ""})
+    mgr.add("minecraft", "Plain", {"flavor": "paper", "version": "latest"})
+    mgr.add("minecraft", "Mods", {"flavor": "pack", "seed": "ignored"})
+    props = lambda sid: (tmp_path / "servers" / sid / "config" / "server.properties").read_text().splitlines()
+    assert "level-seed=glacier peak 42" in props("seeded")
+    assert "level-seed=" in props("random") and "level-seed=" in props("plain") and "level-seed=" in props("mods")
+    assert sum(l.startswith("level-seed") for l in props("seeded")) == 1
+
+
+@pytest.mark.parametrize("bad", ["a\nonline-mode=false", "x" * 65, "back\\slash", "ünï", None, 5])
+def test_a_bad_seed_is_refused(tmp_path, bad):
+    mgr = ServerManager(tmp_path, modules=catalog())
+    with pytest.raises(ValueError, match="World seed"):
+        mgr.add("minecraft", "X", {"flavor": "paper", "version": "latest", "seed": bad})
+    assert not mgr.servers
+
+
+def test_the_seed_shows_read_only_after_creation(tmp_path):
+    fields = Minecraft(tmp_path / "c", tmp_path / "s").describe()["config_schema"]["server.properties"]
+    assert next(f for f in fields if f["key"] == "level-seed")["readonly"] is True
