@@ -137,6 +137,7 @@ class Minecraft(GameModule):
         Port(25565, 25565, "udp", "only used if you turn on enable-query", required=False),
     ]
     config_files = ["server.properties", "panel.properties"]
+    console_input = True  # the server console reads commands from stdin
     config_schema = {
         "server.properties": [
             ConfigField("motd", "Server message", help="Shown under the name in the multiplayer list"),

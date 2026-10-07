@@ -135,3 +135,9 @@ async def test_autostart_toggle_via_api(ready):
     assert d["autostart"] is True and d["autostart_delay"] == 60 and d["autostart_stagger"] == 30
     assert (await ready.patch("/api/servers/fake", json={"autostart": "yes"})).status_code == 400
     assert (await ready.patch("/api/servers/fake", json={"autostart": False})).json()["name"] == "Fake"  # name untouched
+
+
+async def test_command_endpoint(ready):
+    c, base = ready, "/api/servers/fake"
+    assert (await c.get(base)).json()["console_input"] is False
+    assert (await c.post(base + "/command", json={"command": "list"})).status_code == 409
