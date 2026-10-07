@@ -1016,13 +1016,28 @@ function cfgModel(text) {  // -> [{ title, fields: [{ key, label, type, help, op
     cur.fields.push(cfgField(m[2], m[4], help));
   }
   const declared = ((S.detail && S.detail.config_schema) || {})[S.cfgName] || [];
-  for (const d of declared) {  // module-declared labels/types win; declared keys missing from the file are offered too
+  /* Which tab a setting lives under: the group its module declared, else the file's own banner, else "Other settings".
+     Declared groups come first, in the order the module lists them; declared labels/types win; declared keys missing from
+     the file are offered too unless the module marked them optional. */
+  const groups = [], pull = (f) => { for (const x of sections) x.fields = x.fields.filter((y) => y !== f); };
+  for (const d of declared) {
     let f = sections.flatMap((x) => x.fields).find((x) => x.key === d.key);
-    if (!f) { if (!cur) section("Settings"); f = { key: d.key, value: "", help: "" }; (sections.find((x) => x.title === "Settings") || cur).fields.push(f); }
+    if (!f) {
+      if (d.optional) continue;
+      f = { key: d.key, value: "", help: "" }; if (!sections.length) section("Settings"); (sections.find((x) => x.title === "Settings") || sections[0]).fields.push(f);
+    }
     Object.assign(f, { label: d.label, type: d.type, choices_from: d.choices_from, older_warning: d.older_warning, readonly: d.readonly, applies_when: d.applies_when || {} },
       d.help ? { help: d.help } : {}, d.options && d.options.length ? { options: d.options.map((o) => ({ value: o, label: o })) } : {});
+    if (d.group) {
+      pull(f);
+      let g = groups.find((x) => x.title === d.group); if (!g) groups.push(g = { title: d.group, fields: [] });
+      g.fields.push(f);
+    }
   }
-  return sections;
+  const rest = sections.filter((x) => x.fields.length);
+  if (groups.length) for (const x of rest) if (x.title === "Settings") x.title = "Other settings";  // keys with no group and no banner
+  rest.sort((a, b) => (a.title === "Other settings") - (b.title === "Other settings"));  // stable: banners keep file order, Other goes last
+  return [...groups, ...rest];
 }
 function cfgField(key, value, help) {
   const label = key.replace(/^(ship|sv)_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());

@@ -37,6 +37,10 @@ class ConfigField:
     choices_from: bool = False
     older_warning: bool = False  # warn, and confirm on Save, when the value goes older than the saved one (versions)
     applies_when: dict = field(default_factory=dict)  # only show the field when other settings in the file match, e.g. {"flavor": ["paper"]}
+    # Which tab the setting appears under. Order of first appearance in the schema is the tab order. Without a group the page
+    # falls back to the file's own section banners (as The Ship's server.cfg has), then to "Other settings" at the end.
+    group: str = ""
+    optional: bool = False  # only offered when the file already has the key (the game may add it itself later)
 
 
 @dataclass
