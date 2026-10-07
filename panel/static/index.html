@@ -70,7 +70,7 @@ a.btn.primary { color: var(--accent-ink); }
 
 /* ---- status dots and lamps ---- */
 .dot { --c: var(--muted); width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
-.dot[data-s="running"] { --c: var(--ok); box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 60%, transparent); }
+.dot[data-s="running"] { --c: var(--ok); }
 .dot[data-s="crashed"] { --c: var(--bad); }
 .dot[data-s="installing"], .dot[data-s="stopping"] { --c: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 .dot[data-s="new"] { background: transparent; border: 1.5px dashed var(--muted); }
