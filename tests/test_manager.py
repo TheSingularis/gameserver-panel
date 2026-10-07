@@ -105,3 +105,16 @@ def test_minecraft_icon_is_a_pinned_runtime_url_not_a_bundled_file():
     icon = catalog()["minecraft"].icon
     assert icon.startswith("https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons@") and icon.endswith("/png/minecraft.png")
     assert not list(STATIC_ICONS.glob("minecraft.*"))
+
+
+def test_minecraft_server_properties_are_grouped_in_a_fixed_order():
+    from panel.modules import catalog
+    from panel.modules.minecraft import Minecraft
+    from pathlib import Path
+    fields = Minecraft(Path("/tmp/c"), Path("/tmp/s")).describe()["config_schema"]["server.properties"]
+    groups = list(dict.fromkeys(f["group"] for f in fields))
+    assert groups == ["Server", "World", "Gameplay", "Access & network", "Advanced"]
+    assert all(f["group"] for f in fields)
+    # settings the game only writes after its first start are offered only when the file has them
+    assert next(f for f in fields if f["key"] == "rcon.password")["optional"] is True
+    assert next(f for f in fields if f["key"] == "motd")["optional"] is False
