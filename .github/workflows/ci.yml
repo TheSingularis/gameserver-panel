@@ -2,6 +2,9 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request:
+  # Images are built at the top of every hour (if main has something new) or on demand from the Actions tab.
+  schedule: [{ cron: "0 * * * *" }]
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -10,9 +13,27 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install -r requirements-dev.txt && pytest -q
+  plan:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: read }
+    outputs: { build: "${{ steps.p.outputs.build }}" }
+    steps:
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      # push/PR: never build. Manual run: always build. Hourly run: build only when this commit has no image yet.
+      - id: p
+        run: |
+          build=false
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            build=true
+          elif [ "${{ github.event_name }}" = schedule ]; then
+            docker buildx imagetools inspect "ghcr.io/thesingularis/kosmos:sha-${{ github.sha }}" >/dev/null 2>&1 || build=true
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "build image for ${{ github.sha }}: $build"
   image:
-    needs: test
-    if: github.ref == 'refs/heads/main'
+    needs: [test, plan]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.build == 'true'
     # One image push at a time, in merge order: a queued run replaces older
     # queued ones, so the newest commit always publishes `latest` last.
     concurrency: { group: image-latest, cancel-in-progress: false }
@@ -28,7 +49,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: "ghcr.io/thesingularis/kosmos:latest"
+          tags: |
+            ghcr.io/thesingularis/kosmos:latest
+            ghcr.io/thesingularis/kosmos:sha-${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
             PANEL_COMMIT=${{ github.sha }}
