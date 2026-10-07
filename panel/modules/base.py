@@ -31,6 +31,11 @@ class ConfigField:
     type: str = "text"  # "text", "number", "bool", "password" or "select"
     help: str = ""
     options: tuple[str, ...] = ()  # for type "select"
+    # The page loads the choices from /api/games/<module>/choices/<key> (newest first, plus what "latest" means) and shows a
+    # dropdown; it stays a text box if the list cannot be fetched.
+    choices_from: bool = False
+    older_warning: bool = False  # warn, and confirm on Save, when the value goes older than the saved one (versions)
+    applies_when: dict = field(default_factory=dict)  # only show the field when other settings in the file match, e.g. {"flavor": ["paper"]}
 
 
 @dataclass
