@@ -31,6 +31,7 @@ class ConfigField:
     type: str = "text"  # "text", "number", "bool", "password" or "select"
     help: str = ""
     options: tuple[str, ...] = ()  # for type "select"
+    readonly: bool = False  # shown as a plain label: the module refuses changes to it once the server exists
     # The page loads the choices from /api/games/<module>/choices/<key> (newest first, plus what "latest" means) and shows a
     # dropdown; it stays a text box if the list cannot be fetched.
     choices_from: bool = False
@@ -79,6 +80,9 @@ class GameModule:
     def prepare(self, options: dict | None = None) -> None:
         """Called when a server of this game is created (with the user's create_options) and again before install/launch;
         write default settings files here, never overwrite existing ones."""
+
+    def check_config(self, name: str, old: str, new: str) -> None:
+        """Called before a config file is saved with its current and new text; raise ValueError to refuse the change."""
 
     def accept_upload(self, path: Path, log: LogFn) -> None:
         """Take an uploaded file (already saved at `path`, deleted afterwards). Runs in a worker thread."""

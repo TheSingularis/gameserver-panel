@@ -26,12 +26,12 @@ def lists_network(fail=False):
 
 async def test_vanilla_list_is_releases_only_newest_first():
     got = await Minecraft.option_choices("version", {"flavor": "vanilla"}, lists_network())
-    assert got == {"choices": ["1.21.8", "1.21.7", "1.20.4"], "latest": "1.21.8"}
+    assert got == {"choices": ["1.21.8", "1.21.7", "1.20.4"], "latest": "1.21.8", "experimental": []}
 
 
 async def test_paper_list_skips_release_candidates_and_sorts_newest_first():
     got = await Minecraft.option_choices("version", {"flavor": "paper"}, lists_network())
-    assert got == {"choices": ["1.21.8", "1.21.7", "1.20.4"], "latest": "1.21.8"}
+    assert got == {"choices": ["1.21.8", "1.21.7", "1.20.4"], "latest": "1.21.8", "experimental": []}
 
 
 async def test_no_list_for_packs_or_other_keys():
