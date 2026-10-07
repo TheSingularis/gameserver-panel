@@ -221,6 +221,7 @@ a.btn.primary { color: var(--accent-ink); }
 .cfg-sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 14px; scroll-margin-top: 8px; }
 .cfg-sec h3 { margin: 0; }
 .cfg-sec .field { gap: 4px; }
+.cfg-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); border-radius: 7px; padding: 6px 10px; font-size: 12.5px; }
 .cfg-sec .help { font-size: 12.5px; color: var(--muted); }
 .cfg-sec .key { font-size: 11.5px; color: var(--muted); opacity: .75; }
 .cfg-sec .field.check label { display: flex; align-items: center; gap: 8px; }
@@ -427,7 +428,7 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
 };
-const S = { servers: [], games: [], route: "overview", sid: null, detail: null, tab: "console", portRows: [], cfgName: null, cfgOriginal: "", es: null, timers: [], srvTimers: [], pending: null };
+const S = { servers: [], games: [], route: "overview", sid: null, detail: null, tab: "console", portRows: [], cfgName: null, cfgOriginal: "", cfgDyn: [], es: null, timers: [], srvTimers: [], pending: null };
 
 /* ---------- helpers ---------- */
 async function api(method, path, body) {
@@ -979,7 +980,8 @@ function cfgModel(text) {  // -> [{ title, fields: [{ key, label, type, help, op
   for (const d of declared) {  // module-declared labels/types win; declared keys missing from the file are offered too
     let f = sections.flatMap((x) => x.fields).find((x) => x.key === d.key);
     if (!f) { if (!cur) section("Settings"); f = { key: d.key, value: "", help: "" }; (sections.find((x) => x.title === "Settings") || cur).fields.push(f); }
-    Object.assign(f, { label: d.label, type: d.type }, d.help ? { help: d.help } : {}, d.options && d.options.length ? { options: d.options.map((o) => ({ value: o, label: o })) } : {});
+    Object.assign(f, { label: d.label, type: d.type, choices_from: d.choices_from, older_warning: d.older_warning, applies_when: d.applies_when || {} },
+      d.help ? { help: d.help } : {}, d.options && d.options.length ? { options: d.options.map((o) => ({ value: o, label: o })) } : {});
   }
   return sections;
 }
@@ -1002,7 +1004,7 @@ function cfgChanges() {
 }
 function renderCfgForm() {
   const form = $("#cfgForm"), nav = $("#cfgNav"), body = $("#cfgSections"), sections = cfgModel($("#editor").value).filter((x) => x.fields.length);
-  nav.textContent = ""; body.textContent = "";
+  nav.textContent = ""; body.textContent = ""; S.cfgDyn = [];
   $("#cfgLayout").classList.toggle("single", sections.length < 2);
   sections.forEach((sec, i) => {
     const id = "cfgsec" + i;
@@ -1011,7 +1013,7 @@ function renderCfgForm() {
     const card = el("section", { class: "cfg-sec", id, role: "tabpanel" }, el("h3", { class: "eyebrow", text: sec.title }));
     for (const f of sec.fields) {
       const cur = f.value, fid = "cf_" + f.key.replace(/\W/g, "_");
-      const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); };
+      const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, f.key, v); markDirty(); S.cfgDyn.filter((d) => f.key in d.f.applies_when).forEach(hydrateChoices); };
       const meta = [f.help ? el("span", { class: "help", text: f.help }) : null, el("span", { class: "key mono", text: f.key })];
       let input;
       if (f.type === "bool") {
@@ -1030,6 +1032,11 @@ function renderCfgForm() {
         input = el("input", { class: "input", id: fid, type: f.type === "number" ? "number" : f.type === "password" ? "password" : "text", autocomplete: "off", oninput: (e) => set(e.target.value) });
         input.value = cur;
       }
+      if (f.choices_from) {  // a dropdown of releases once the list arrives; a plain text box until then or if it cannot be fetched
+        const ctl = el("div", { class: "ctl" }, input), warn = el("div", { class: "cfg-warn", hidden: "" }), wrap = el("div", { class: "field" }, el("label", { for: fid, text: f.label }), ctl, warn, ...meta);
+        card.append(wrap); S.cfgDyn.push({ f, wrap, ctl, warn, fid, tok: 0 });
+        continue;
+      }
       card.append(el("div", { class: "field" }, el("label", { for: fid, text: f.label }), input, ...meta));
     }
     body.append(card);
@@ -1038,6 +1045,49 @@ function renderCfgForm() {
   const first = sections.find((x) => x.title === S.cfgSec) || sections[0];  // keep the tab you were on across view switches
   if (first) showCfgSection("cfgsec" + sections.indexOf(first), first.title);
   updateCfgBadges();
+  S.cfgDyn.forEach(hydrateChoices);
+}
+/* Fields whose choices come from the module (the Minecraft version): shown only when the file's other settings allow it,
+   a dropdown of releases when the list loads, a text box otherwise, and a warning when it goes older than the saved value. */
+const cfgLists = {};
+const isVersion = (v) => /^\d+(\.\d+)*$/.test(v);
+const cmpVer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
+const cfgVal = (text, key) => { const h = cfgParse(text).get(key); return h ? h.value : null; };
+const cfgApplies = (f, text) => Object.entries(f.applies_when || {}).every(([k, allowed]) => allowed.includes((cfgVal(text, k) || "").toLowerCase()));
+function cfgListKey(f, text) { return `${S.detail.module}|${f.key}|${(cfgVal(text, "flavor") || "paper").toLowerCase()}`; }
+function olderThanSaved(f, text, list) {  // the saved version when `text` goes older than it, else null
+  const was = cfgVal(S.cfgOriginal, f.key), now = cfgVal(text, f.key);
+  const eff = (v) => (v === "latest" || v === "" ? (list && list.latest) || null : v);
+  const a = now === null ? null : eff(now.trim()), b = was === null ? null : eff(was.trim());
+  return a && b && isVersion(a) && isVersion(b) && cmpVer(a, b) < 0 ? b : null;
+}
+function updateCfgWarn(e) {
+  const text = $("#editor").value, list = cfgLists[cfgListKey(e.f, text)] || null, saved = e.f.older_warning && !e.wrap.hidden ? olderThanSaved(e.f, text, list) : null;
+  e.warn.hidden = !saved;
+  if (saved) e.warn.textContent = `Older than the saved ${saved}. Worlds saved by a newer version may not load, so back up first. Applied by Check for updates.`;
+}
+async function hydrateChoices(e) {
+  const text = $("#editor").value, tok = ++e.tok;
+  e.wrap.hidden = !cfgApplies(e.f, text);
+  if (e.wrap.hidden) { updateCfgWarn(e); return; }
+  const key = cfgListKey(e.f, text), flavor = key.split("|")[2];
+  if (cfgLists[key] === undefined) {
+    try { cfgLists[key] = await api("GET", `/api/games/${S.detail.module}/choices/${e.f.key}?flavor=${encodeURIComponent(flavor)}`); } catch (_) { cfgLists[key] = false; }
+  }
+  if (tok !== e.tok || !e.wrap.isConnected) return;  // a newer pass (flavor changed) or a re-render took over
+  const list = cfgLists[key], cur = cfgVal($("#editor").value, e.f.key) || "";
+  const set = (v) => { $("#editor").value = cfgPatch($("#editor").value, e.f.key, v); markDirty(); updateCfgWarn(e); };
+  let input;
+  if (!list) {
+    input = el("input", { class: "input", id: e.fid, type: "text", autocomplete: "off", oninput: (ev) => set(ev.target.value) }); input.value = cur;
+  } else {
+    input = el("select", { class: "input", id: e.fid, onchange: (ev) => set(ev.target.value) });
+    const opts = [{ value: "latest", label: list.latest ? `latest (now ${list.latest})` : "latest" }, ...list.choices.map((v) => ({ value: v, label: v }))];
+    if (!opts.some((o) => o.value === cur) && cur !== "") opts.splice(1, 0, { value: cur, label: `${cur} (current, not in the list)` });
+    for (const o of opts) input.append(el("option", { value: o.value, text: o.label }));
+    input.value = cur === "" ? "latest" : cur;
+  }
+  e.ctl.replaceChildren(input); updateCfgWarn(e);
 }
 function showCfgSection(id, title) {
   S.cfgSec = title;
@@ -1082,10 +1132,19 @@ async function openCfg(name, force) {
   } catch (e) { toast(e.message, true); }
   markDirty(); syncCfgView();
 }
+async function confirmOlderVersions() {  // true when it is fine to save: nothing goes older, or the person confirmed
+  const text = $("#editor").value, declared = ((S.detail && S.detail.config_schema) || {})[S.cfgName] || [];
+  for (const f of declared.filter((d) => d.older_warning && cfgApplies(d, text))) {
+    const saved = olderThanSaved(f, text, cfgLists[cfgListKey(f, text)] || null);
+    if (saved && !(await confirmModal("Switch to an older version?", `This server is saved as ${saved} and you are saving ${cfgVal(text, f.key)}. Worlds saved by a newer version may not load. Back up first.`, "Save anyway", true))) return false;
+  }
+  return true;
+}
 async function saveCfg(restart) {
+  if (!(await confirmOlderVersions())) return;
   try {
     await api("PUT", `/api/servers/${S.sid}/config/${encodeURIComponent(S.cfgName)}`, { content: $("#editor").value });
-    S.cfgOriginal = $("#editor").value; markDirty(); toast("Config saved"); if (restart) await run("restart");
+    S.cfgOriginal = $("#editor").value; markDirty(); (S.cfgDyn || []).forEach(updateCfgWarn); toast("Config saved"); if (restart) await run("restart");
   } catch (e) { toast(e.message, true); }
 }
 $("#editor").oninput = markDirty;

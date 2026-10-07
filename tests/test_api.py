@@ -106,7 +106,7 @@ async def test_tampered_cookie_rejected(client):
 def test_config_schema_is_described(tmp_path):
     from panel.modules.demo import Demo
     d = Demo(tmp_path / "c", tmp_path / "s").describe()
-    assert d["config_schema"]["demo.cfg"][0] == {"key": "name", "label": "Server name", "type": "text", "help": "Shown in the server list", "options": ()}
+    assert d["config_schema"]["demo.cfg"][0] == {"key": "name", "label": "Server name", "type": "text", "help": "Shown in the server list", "options": (), "choices_from": False, "older_warning": False, "applies_when": {}}
 
 
 async def test_index_is_never_served_from_browser_cache(client):
