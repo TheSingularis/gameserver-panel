@@ -152,6 +152,10 @@ a.btn.primary { color: var(--accent-ink); }
 .grow-row p { margin: 2px 0 7px; color: var(--muted); }
 .create { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 0 2px; }
 .create .input { flex: 1 1 220px; max-width: 360px; }
+.create-line { flex: 1 1 100%; display: grid; gap: 4px; }
+.create-line label { font-size: 12.5px; font-weight: 700; }
+.create-line .input { max-width: 360px; }
+.create-line .help { font-size: 12.5px; color: var(--muted); }
 @media (max-width: 560px) { .grow-row { grid-template-columns: auto minmax(0, 1fr); } .grow-row > .act { grid-column: 1 / -1; } }
 
 /* ---- progress ---- */
@@ -651,7 +655,11 @@ async function loadGames() {
     const picks = {}, fields = [];  // picks[key] = the control holding that option's value
     for (const o of g.options || []) {
       let node;
-      if (o.choices) {
+      if (o.plain) {  // a labelled line of its own, with help text, under the main row (e.g. the world seed)
+        const id = `opt_${g.id}_${o.key}`, inp = el("input", { class: "input", id, maxlength: "64", autocomplete: "off", placeholder: o.placeholder || "" });
+        node = el("div", { class: "create-line" }, el("label", { for: id, text: o.label }), inp, o.help ? el("div", { class: "help", text: o.help }) : null);
+        picks[o.key] = { get value() { return inp.value.trim(); } };
+      } else if (o.choices) {
         const sel = el("select", { class: "input", "aria-label": o.label });
         for (const c of o.choices) sel.append(el("option", { value: c, text: (o.labels && o.labels[c]) || c }));
         sel.value = o.default; picks[o.key] = sel; node = sel;
@@ -688,7 +696,7 @@ async function loadGames() {
       zipIn.hidden = !(picks.flavor && picks.flavor.value === "pack");
     }
     if (picks.flavor) picks.flavor.onchange = refreshOptions;
-    create.append(...fields.map((f) => f.node), nameIn, zipIn, go, cancel);
+    create.append(...fields.filter((f) => !f.o.plain).map((f) => f.node), nameIn, zipIn, ...fields.filter((f) => f.o.plain).map((f) => f.node), go, cancel);
     const open = el("button", { class: "btn small primary", type: "button", text: g.servers ? "Add another" : "Add server" });
     if (soon) { open.textContent = "Coming soon"; open.disabled = true; open.className = "btn small"; }
     open.onclick = () => { refreshOptions(); nameIn.value = g.servers ? `${g.name} ${g.servers + 1}` : g.name; create.hidden = false; open.hidden = true; nameIn.focus(); nameIn.select(); };
