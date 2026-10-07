@@ -201,6 +201,8 @@ a.btn.primary { color: var(--accent-ink); }
 .log div { white-space: pre-wrap; overflow-wrap: anywhere; }
 .log .cmd { color: var(--log-cmd); } .log .panel { color: var(--log-dim); font-style: italic; }
 .log .bad { color: var(--log-bad); } .log .warn { color: var(--log-warn); } .log .dim { color: var(--log-dim); }
+.cmdbar { display: flex; gap: 8px; margin-top: 8px; }
+.cmdbar .input { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 13px; }
 .log:empty::before { content: "Nothing logged yet. Start the server to see its output here."; color: var(--log-dim); }
 
 /* ---- config ---- */
@@ -340,6 +342,10 @@ a.btn.primary { color: var(--accent-ink); }
           <button class="btn small" id="logClear" type="button">Clear view</button>
         </div>
         <div class="log" id="log" role="log" aria-label="Server console"></div>
+        <form class="cmdbar" id="cmdForm" autocomplete="off" hidden>
+          <input class="input" id="cmdInput" type="text" placeholder="Type a command" aria-label="Console command" autocapitalize="off" spellcheck="false">
+          <button class="btn primary" id="cmdSend" type="submit">Send</button>
+        </form>
       </div>
 
       <div id="tpConfig" data-panel="config" hidden>
@@ -812,6 +818,9 @@ function renderStatus() {
   $("#bReinstall").hidden = !!(S.detail && S.detail.can_reinstall === false);
   $("#notice").hidden = s.installed || s.state === "installing";
   $("#cfgSaveRestart").disabled = busy || !running;
+  show("cmdForm", !!(S.detail && S.detail.console_input));
+  $("#cmdInput").disabled = $("#cmdSend").disabled = !running;
+  $("#cmdInput").placeholder = running ? "Type a command" : "Start the server to send commands";
 }
 function renderAutostart(s) {
   const cb = $("#autoStart"), d = S.detail || {}, delay = d.autostart_delay ?? 60, gap = d.autostart_stagger ?? 30;
@@ -926,6 +935,20 @@ function connectLog() {
 $("#filter").oninput = renderLog;
 $("#follow").onchange = () => { if ($("#follow").checked) $("#log").scrollTop = $("#log").scrollHeight; };
 $("#log").addEventListener("wheel", () => { const b = $("#log"); if (b.scrollTop + b.clientHeight < b.scrollHeight - 30) $("#follow").checked = false; }, { passive: true });
+const cmdHistory = []; let cmdPos = 0;
+$("#cmdForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const inp = $("#cmdInput"), text = inp.value.trim(); if (!text) return;
+  inp.disabled = $("#cmdSend").disabled = true;
+  try { await api("POST", `/api/servers/${S.sid}/command`, { command: text }); cmdHistory.push(text); cmdPos = cmdHistory.length; inp.value = ""; }
+  catch (err) { toast(err.message, true); }
+  renderStatus(); inp.focus();
+};
+$("#cmdInput").addEventListener("keydown", (e) => {  // up/down walk through earlier commands
+  if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  e.preventDefault(); cmdPos = Math.max(0, Math.min(cmdHistory.length, cmdPos + (e.key === "ArrowUp" ? -1 : 1)));
+  e.target.value = cmdHistory[cmdPos] || "";
+});
 $("#logClear").onclick = () => { lines = []; renderLog(); };
 $("#logCopy").onclick = async () => {
   try { await navigator.clipboard.writeText(lines.filter(matches).join("\n")); toast("Log copied"); }

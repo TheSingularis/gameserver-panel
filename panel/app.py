@@ -218,6 +218,17 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
             return handler
         app.post(f"/api/servers/{{sid}}/{_name}", dependencies=protected)(_make(_name))
 
+    @app.post("/api/servers/{sid}/command", dependencies=protected)
+    async def command(sid: str, body: dict):
+        sup = server(sid).supervisor
+        try:
+            await sup.send(str(body.get("command", "")))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+        return {"ok": True}
+
     @app.get("/api/servers/{sid}/logs", dependencies=protected)
     async def logs(sid: str, n: int = 200):
         return {"lines": server(sid).supervisor.tail(max(1, min(n, 2000)))}
