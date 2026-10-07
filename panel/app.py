@@ -256,8 +256,14 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     @app.put("/api/servers/{sid}/config/{name}", dependencies=protected)
     async def put_config(sid: str, name: str, body: dict):
         p = cfg_path(sid, name)
+        text = str(body.get("content", ""))
+        if p.exists():
+            try:
+                server(sid).module.check_config(name, p.read_text(errors="replace"), text)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(str(body.get("content", "")))
+        p.write_text(text)
         return {"ok": True, "note": "restart the server to apply"}
 
     @app.post("/api/servers/{sid}/upload", dependencies=protected)

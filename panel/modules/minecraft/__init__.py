@@ -27,6 +27,7 @@ _TEST_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests put a fake netw
 USER_AGENT = "gameserver-panel/1.0 (https://github.com/TheSingularis/gameserver-panel)"  # PaperMC requires a contact UA
 EULA_URL = "https://www.minecraft.net/en-us/eula"
 FLAVORS = ("paper", "vanilla", "pack")
+PAPER_CHANNELS = ("STABLE", "BETA", "ALPHA")  # which Paper builds to prefer, best first
 JAVA_CHOICES = ("auto", "8", "17", "21", "25")
 JAVA_HOMES = Path(os.environ.get("MINECRAFT_JAVA_ROOT", "/opt/java"))  # <root>/<major>/bin/java, as laid out by the image
 PACK_MARKER = ".panel-pack.json"
@@ -154,9 +155,9 @@ class Minecraft(GameModule):
             ConfigField("level-seed", "World seed", help="Only used when a world is first created"),
         ],
         "panel.properties": [
-            ConfigField("flavor", "Server type", "select", options=FLAVORS,
-                        help="Paper adds plugin support; Vanilla is Mojang's own; pack runs a modpack server zip you upload (Advanced tab)."),
-            ConfigField("version", "Minecraft version", help="latest, or an exact one such as 1.21.8. Applied by Check for updates.",
+            ConfigField("flavor", "Server type", "select", options=FLAVORS, readonly=True,
+                        help="Chosen when the server was created and can't be changed: switching type later breaks configs and worlds. Add a new server instead."),
+            ConfigField("version", "Minecraft version", help="latest, or an exact one such as 1.21.8. Saving a new version offers to update right away.",
                         choices_from=True, older_warning=True, applies_when={"flavor": ["paper", "vanilla"]}),
             ConfigField("memory", "Memory for Java", help="For example 2G or 4096M"),
             ConfigField("java", "Java version", "select", options=JAVA_CHOICES,
@@ -186,6 +187,7 @@ class Minecraft(GameModule):
         flavor = picks.get("flavor")
         if key != "version" or flavor not in ("paper", "vanilla"):
             raise ValueError("no list of choices for that")
+        experimental: list[str] = []
         async with httpx.AsyncClient(transport=transport or _TEST_TRANSPORT, headers={"User-Agent": USER_AGENT},
                                      follow_redirects=True, timeout=httpx.Timeout(15.0)) as client:
             if flavor == "vanilla":
@@ -197,9 +199,19 @@ class Minecraft(GameModule):
                 flat = [v for g in (listed.values() if isinstance(listed, dict) else [listed]) for v in (g if isinstance(g, list) else [g])]
                 found = sorted({v for v in flat if isinstance(v, str) and SIMPLE_VERSION.fullmatch(v)}, key=version_key, reverse=True)
                 latest = found[0] if found else None
+                # "latest" means the newest version with a stable build; the newer ones are offered but marked as pre-release.
+                for v in found[:4]:
+                    try:
+                        builds = Minecraft._paper_builds((await client.get(f"{PAPER_API}/versions/{v}/builds")).raise_for_status().json())
+                    except (httpx.HTTPError, ValueError):
+                        break
+                    if any(str(b.get("channel", "")).upper() == "STABLE" for b in builds):
+                        latest = v
+                        break
+                    experimental.append(v)
         if not found:
             raise RuntimeError("no versions were listed")
-        return {"choices": found, "latest": latest}
+        return {"choices": found, "latest": latest, "experimental": experimental}
 
     # -- settings ----------------------------------------------------------
     def prepare(self, options: dict | None = None) -> None:
@@ -211,6 +223,14 @@ class Minecraft(GameModule):
                            ("panel.properties", PANEL_DEFAULTS.format(flavor=flavor, version=version))):
             if not (self.config_dir / name).exists():
                 (self.config_dir / name).write_text(text)
+
+    def check_config(self, name: str, old: str, new: str) -> None:
+        if name != "panel.properties":
+            return
+        was = parse_properties(old).get("flavor", "paper").lower()
+        now = parse_properties(new).get("flavor", "paper").lower()
+        if was != now:
+            raise ValueError(f"This server is a {was} server and its type can't be changed. Add a new server of the type you want.")
 
     def _props(self, name: str) -> dict[str, str]:
         try:
@@ -241,14 +261,25 @@ class Minecraft(GameModule):
             return "A modpack can't be re-downloaded: upload its server zip again instead (worlds and player lists are kept)."
         return None
 
+    def _world_dirs(self) -> list[str]:
+        """Every top-level folder that holds a world (has a level.dat), whatever level-name says now: renaming the
+        world in the settings must never expose the old one to a clean reinstall."""
+        try:
+            return sorted(d.name for d in self.server_dir.iterdir() if d.is_dir() and not d.is_symlink() and (d / "level.dat").is_file())
+        except OSError:
+            return []
+
     @property
     def persistent_paths(self) -> list[str]:  # type: ignore[override]
         level = self._props("server.properties").get("level-name", "world")
         if not LEVEL_NAME.fullmatch(level) or level in (".", ".."):
             level = "world"
-        # Worlds (Vanilla/old Paper keep the nether and end beside the main world), who may join, and plugins with their settings.
-        return [level, f"{level}_nether", f"{level}_the_end", "ops.json", "whitelist.json",
-                "banned-players.json", "banned-ips.json", "plugins", "config"]
+        # Worlds (Vanilla/old Paper keep the nether and end beside the main world), who may join, plugins with their
+        # settings, and the server's own root settings files (Paper/Spigot/Bukkit) and icon.
+        fixed = [level, f"{level}_nether", f"{level}_the_end", "ops.json", "whitelist.json",
+                 "banned-players.json", "banned-ips.json", "plugins", "config",
+                 "bukkit.yml", "spigot.yml", "commands.yml", "permissions.yml", "help.yml", "server-icon.png", "usercache.json"]
+        return fixed + [d for d in self._world_dirs() if d not in fixed]
 
     # -- EULA --------------------------------------------------------------
     def eula_accepted(self) -> bool:
@@ -306,7 +337,14 @@ class Minecraft(GameModule):
             raise RuntimeError(f"Minecraft {want} has no dedicated server download")
         return {"version": want, "build": "", "url": server["url"], "algo": "sha1", "sum": server["sha1"]}
 
+    @staticmethod
+    def _paper_builds(builds) -> list[dict]:
+        builds = builds.get("builds", []) if isinstance(builds, dict) else builds
+        return [b for b in builds if "server:default" in b.get("downloads", {})]
+
     async def _resolve_paper(self, client: httpx.AsyncClient, version: str) -> dict:
+        """`latest` is the newest version with a stable build. An exact version uses its newest stable build, or, when
+        Paper has only pre-release builds for it so far (a brand-new Minecraft version), the newest beta, then alpha."""
         if version != "latest":
             candidates = [version]
         else:
@@ -314,14 +352,15 @@ class Minecraft(GameModule):
             flat = [v for g in (listed.values() if isinstance(listed, dict) else [listed]) for v in (g if isinstance(g, list) else [g])]
             candidates = sorted({v for v in flat if isinstance(v, str) and SIMPLE_VERSION.fullmatch(v)}, key=version_key, reverse=True)
         for v in candidates:  # newest first; a brand-new version may not have a stable build yet
-            builds = await self._json(client, f"{PAPER_API}/versions/{v}/builds")
-            builds = builds.get("builds", []) if isinstance(builds, dict) else builds
-            stable = [b for b in builds if str(b.get("channel", "")).upper() == "STABLE" and "server:default" in b.get("downloads", {})]
-            if stable:
-                best = max(stable, key=lambda b: int(b["id"]))
-                d = best["downloads"]["server:default"]
-                return {"version": v, "build": str(best["id"]), "url": d["url"], "algo": "sha256", "sum": d["checksums"]["sha256"]}
-        raise RuntimeError(f"Paper has no stable build for {version if version != 'latest' else 'any version'}")
+            builds = self._paper_builds(await self._json(client, f"{PAPER_API}/versions/{v}/builds"))
+            for channel in ("STABLE",) if version == "latest" else PAPER_CHANNELS:
+                found = [b for b in builds if str(b.get("channel", "")).upper() == channel]
+                if found:
+                    best = max(found, key=lambda b: int(b["id"]))
+                    d = best["downloads"]["server:default"]
+                    return {"version": v, "build": str(best["id"]), "url": d["url"], "algo": "sha256",
+                            "sum": d["checksums"]["sha256"], "channel": channel}
+        raise RuntimeError(f"Paper has no build for {version}" if version != "latest" else "Paper has no stable build for any version")
 
     async def _download(self, client: httpx.AsyncClient, url: str, dest: Path, algo: str, expected: str) -> None:
         digest = hashlib.new(algo)
@@ -362,6 +401,9 @@ class Minecraft(GameModule):
             if have == want and self.is_installed():
                 log(f"[panel] Minecraft {flavor} {found['version']} is already up to date")
                 return
+            if found.get("channel", "STABLE") != "STABLE":
+                log(f"[panel] Paper has no stable build for {found['version']} yet: using its newest {found['channel'].lower()} build, "
+                    "which may be buggy. Back up your world first.")
             log(f"[panel] downloading {flavor} {found['version']}" + (f" build {found['build']}" if found["build"] else ""))
             part = self.server_dir / (JAR + ".part")
             await self._download(client, found["url"], part, found["algo"], found["sum"])
@@ -372,7 +414,7 @@ class Minecraft(GameModule):
 
     # -- uploaded modpack ---------------------------------------------------
     def _keep_on_repack(self) -> list[str]:
-        level = self.persistent_paths[:3]  # world, nether, end
+        level = self.persistent_paths[:3] + self._world_dirs()  # world, nether, end, and any other world folder
         return level + ["ops.json", "whitelist.json", "banned-players.json", "banned-ips.json", "usercache.json"]
 
     def accept_upload(self, path: Path, log: LogFn) -> None:
