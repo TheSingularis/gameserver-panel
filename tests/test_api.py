@@ -141,3 +141,8 @@ async def test_command_endpoint(ready):
     c, base = ready, "/api/servers/fake"
     assert (await c.get(base)).json()["console_input"] is False
     assert (await c.post(base + "/command", json={"command": "list"})).status_code == 409
+
+
+async def test_game_without_player_lists_has_no_players_endpoint(ready):
+    assert (await ready.get("/api/servers/fake/players")).status_code == 404
+    assert (await ready.get("/api/servers/fake")).json()["players"] is False

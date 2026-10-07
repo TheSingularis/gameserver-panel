@@ -62,6 +62,8 @@ plus a `version` (`latest` or an exact one such as `1.21.8`) and the Java `memor
 
 Worlds (`level-name`, plus its `_nether` and `_the_end`), `ops.json`, the whitelist and ban lists, `plugins/` and Paper's `config/` survive "Clean & reinstall";
 everything else is re-downloaded. The stop timeout is 90 s so a big world can save before the process is killed.
+The **Players** tab manages the whitelist, operators and bans. While the server runs it types the matching console command (`whitelist add`, `op`, `ban`...) so changes apply instantly; while it is stopped it edits the JSON lists directly and looks the player's UUID up on Mojang (or computes the offline one when `online-mode` is off).
+
 The image bundles Java 8, 17, 21 and 25 (under `/opt/java/<major>`) and the panel picks the one a server's Minecraft version needs; set `java` in `panel.properties` to force one.
 
 **Modpacks (Forge, NeoForge, Fabric, ...).** Choose "Modpack server zip" as the server type when adding a Minecraft server and pick the zip, or upload it later from the
