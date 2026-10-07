@@ -37,6 +37,7 @@ MARKER = ".panel-install.json"  # which flavor/version/build the jar is, so "upd
 VERSION_CHOICE = re.compile(r"^(latest|\d+(\.\d+)*)$")  # what a person may ask for when creating a server
 SIMPLE_VERSION = re.compile(r"^\d+(\.\d+)*$")  # skips snapshots, pre-releases and release candidates
 MEMORY = re.compile(r"^\d{1,5}[MG]$", re.I)
+SEED_CHOICE = re.compile(r"^[A-Za-z0-9 _.,'!-]{0,64}$")  # what a person may type as a world seed (kept plain: Java reads the file as latin-1 with escapes)
 LEVEL_NAME = re.compile(r"^[\w .-]{1,64}$")
 
 SERVER_DEFAULTS = """\
@@ -152,7 +153,8 @@ class Minecraft(GameModule):
             ConfigField("pvp", "Players can hurt each other", "bool"),
             ConfigField("view-distance", "View distance (chunks)", "number", help="Lower is lighter on the server"),
             ConfigField("level-name", "World folder name", help="Changing this starts a new world"),
-            ConfigField("level-seed", "World seed", help="Only used when a world is first created"),
+            ConfigField("level-seed", "World seed", readonly=True,
+                        help="Set when the server was created. Changing it later does nothing to an existing world."),
         ],
         "panel.properties": [
             ConfigField("flavor", "Server type", "select", options=FLAVORS, readonly=True,
@@ -174,6 +176,11 @@ class Minecraft(GameModule):
         # Free-form (any release), with a list the page loads from `option_choices`; a modpack brings its own version.
         {"key": "version", "label": "Minecraft version", "default": "latest", "pattern": VERSION_CHOICE.pattern,
          "hint": "use latest or a version like 1.21.8", "choices_from": True, "applies_when": {"flavor": ["paper", "vanilla"]}},
+        # Optional: blank means a random world. Written to server.properties once, at creation.
+        {"key": "seed", "label": "World seed (optional)", "default": "", "pattern": SEED_CHOICE.pattern, "plain": True,
+         "placeholder": "Leave blank for a random world", "hint": "up to 64 letters, numbers, spaces or - _ . , ' !",
+         "help": "Fixed once the world is created, so it shows as read-only on the Config tab afterwards.",
+         "applies_when": {"flavor": ["paper", "vanilla"]}},
     ]
 
     def __init__(self, config_dir: Path, server_dir: Path):
@@ -219,7 +226,10 @@ class Minecraft(GameModule):
         self.config_dir.mkdir(parents=True, exist_ok=True)
         flavor = (options or {}).get("flavor", "paper")
         version = (options or {}).get("version", "latest") if flavor != "pack" else "latest"
-        for name, text in (("server.properties", SERVER_DEFAULTS),
+        seed = str((options or {}).get("seed", "")).strip() if flavor != "pack" else ""
+        if not SEED_CHOICE.fullmatch(seed):
+            seed = ""
+        for name, text in (("server.properties", SERVER_DEFAULTS.replace("level-seed=\n", f"level-seed={seed}\n")),
                            ("panel.properties", PANEL_DEFAULTS.format(flavor=flavor, version=version))):
             if not (self.config_dir / name).exists():
                 (self.config_dir / name).write_text(text)
