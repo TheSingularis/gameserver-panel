@@ -155,7 +155,8 @@ class Minecraft(GameModule):
         "panel.properties": [
             ConfigField("flavor", "Server type", "select", options=FLAVORS,
                         help="Paper adds plugin support; Vanilla is Mojang's own; pack runs a modpack server zip you upload (Advanced tab)."),
-            ConfigField("version", "Minecraft version", help="latest, or an exact one such as 1.21.8. Applied by Check for updates."),
+            ConfigField("version", "Minecraft version", help="latest, or an exact one such as 1.21.8. Applied by Check for updates.",
+                        choices_from=True, older_warning=True, applies_when={"flavor": ["paper", "vanilla"]}),
             ConfigField("memory", "Memory for Java", help="For example 2G or 4096M"),
             ConfigField("java", "Java version", "select", options=JAVA_CHOICES,
                         help="auto picks the Java your Minecraft version needs (8, 17, 21 or 25)"),
