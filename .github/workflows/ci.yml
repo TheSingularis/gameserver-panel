@@ -13,6 +13,9 @@ jobs:
   image:
     needs: test
     if: github.ref == 'refs/heads/main'
+    # One image push at a time, in merge order: a queued run replaces older
+    # queued ones, so the newest commit always publishes `latest` last.
+    concurrency: { group: image-latest, cancel-in-progress: false }
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     steps:
