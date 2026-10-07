@@ -75,6 +75,13 @@ a.btn.primary { color: var(--accent-ink); }
 .dot[data-s="installing"], .dot[data-s="stopping"] { --c: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 .dot[data-s="new"] { background: transparent; border: 1.5px dashed var(--muted); }
 @keyframes pulse { 50% { opacity: .45; } }
+/* server card status: a tinted badge carrying the state word, no glowing dot */
+.pill { --c: var(--muted); padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 650; white-space: nowrap; color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c) 30%, transparent); }
+.pill[data-s="running"] { --c: var(--ok); }
+.pill[data-s="crashed"] { --c: var(--bad); }
+.pill[data-s="installing"], .pill[data-s="stopping"] { --c: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.pill[data-s="stopped"] { background: none; border-color: var(--line); }
 
 /* ---- game icon tile (the game's icon fitted inside the tile with a margin, or a neutral grey initial when there is none) ---- */
 .ico { width: var(--w, 32px); height: var(--w, 32px); border-radius: 7px; flex: none; overflow: hidden; display: grid; place-items: center;
@@ -604,7 +611,7 @@ function renderOverview() {
     const running = sv.state === "running", busy = sv.state === "installing" || sv.state === "stopping";
     const card = el("section", { class: "card gcard" },
       el("div", { class: "top" }, iconEl(sv.icon, sv.game, 34), el("div", { style: "min-width:0" }, el("h3", { text: sv.name }), el("div", { class: "muted", style: "font-size:12.5px", text: sv.game })), el("span", { class: "grow" }),
-        el("span", { class: "dot", "data-s": sv.state }), el("span", { class: "muted", style: "font-size:13px;white-space:nowrap", text: stateWord(sv) })),
+        el("span", { class: "pill", "data-s": sv.state, text: stateWord(sv) })),
       el("p", { text: running ? `Up ${fmtUp(sv.uptime_s || 0)}` : sv.description }));
     if (sv.progress) {
       const ph = el("span"), pc = el("b"), tr = el("div", { class: "track" }, el("div", { class: "fill" }));
