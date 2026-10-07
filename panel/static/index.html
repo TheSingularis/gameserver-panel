@@ -624,37 +624,66 @@ function renderNavDots() {
 function stopAll() { S.timers.forEach(clearInterval); S.timers = []; closeServer(); }
 
 /* ---------- overview ---------- */
+/* The Overview cards are patched in place: a card is rebuilt only when something that is not a live number changes (name, game,
+   icon, whether a progress bar is showing). The 2-second poll just updates the status pill, uptime text, progress and button,
+   so icons and labels never reload or flicker. */
+const OV = new Map();
+const ovSig = (sv) => [sv.id, sv.name, sv.game, sv.icon, sv.description, !!sv.progress].join("\u0001");
+const setText = (node, t) => { if (node.textContent !== t) node.textContent = t; };
+function ovCard(sv) {
+  const pill = el("span", { class: "pill" }), text = el("p");
+  const card = el("section", { class: "card gcard" },
+    el("div", { class: "top" }, iconEl(sv.icon, sv.game, 34), el("div", { style: "min-width:0" }, el("h3", { text: sv.name }), el("div", { class: "muted", style: "font-size:12.5px", text: sv.game })), el("span", { class: "grow" }), pill),
+    text);
+  const o = { card, pill, text, sig: ovSig(sv) };
+  if (sv.progress) {
+    const ph = el("span"), pc = el("b"), tr = el("div", { class: "track" }, el("div", { class: "fill" }));
+    const wrap = el("div", { class: "prog" }, el("div", { class: "prog-top" }, ph, pc), tr);
+    card.append(wrap); o.prog = [wrap, ph, pc, tr];
+  }
+  o.quick = el("button", { class: "btn small", type: "button" });
+  o.quick.onclick = async () => {
+    const cur = S.servers.find((x) => x.id === sv.id); if (!cur) return;
+    const live = cur.state === "running"; o.quick.disabled = true;
+    try { await api("POST", `/api/servers/${cur.id}/${!cur.installed ? "update" : live ? "stop" : "start"}`); } catch (e) { toast(e.message, true); }
+    pollServers();
+  };
+  card.append(el("div", { class: "row" }, o.quick, el("a", { class: "btn small ghost", href: "#" + sv.id, style: "text-decoration:none", text: "Open" })));
+  return o;
+}
+function ovPatch(o, sv) {
+  const running = sv.state === "running", busy = sv.state === "installing" || sv.state === "stopping";
+  if (o.pill.dataset.s !== sv.state) o.pill.dataset.s = sv.state;
+  setText(o.pill, stateWord(sv));
+  setText(o.text, running ? `Up ${fmtUp(sv.uptime_s || 0)}` : sv.description);
+  if (o.prog) renderProgress(...o.prog, sv.progress);
+  const cls = "btn small " + (running ? "danger" : "primary");
+  if (o.quick.className !== cls) o.quick.className = cls;
+  setText(o.quick, !sv.installed ? "Install" : running ? "Stop" : "Start");
+  o.quick.disabled = busy;
+}
 function renderOverview() {
-  const box = $("#ovCards"); box.textContent = "";
+  const box = $("#ovCards");
   if (!S.servers.length) {
-    box.append(el("section", { class: "card empty", style: "grid-column:1/-1" },
-      el("h2", { text: "No games yet" }),
-      el("p", { text: "Add your first game server to get started. You can run several side by side, including more than one of the same game." }),
-      el("a", { class: "btn primary", href: "#add", style: "text-decoration:none", text: "Add a game" })));
+    if (!box.querySelector(".empty")) {
+      box.textContent = ""; OV.clear();
+      box.append(el("section", { class: "card empty", style: "grid-column:1/-1" },
+        el("h2", { text: "No games yet" }),
+        el("p", { text: "Add your first game server to get started. You can run several side by side, including more than one of the same game." }),
+        el("a", { class: "btn primary", href: "#add", style: "text-decoration:none", text: "Add a game" })));
+    }
     return;
   }
-  for (const sv of S.servers) {
-    const running = sv.state === "running", busy = sv.state === "installing" || sv.state === "stopping";
-    const card = el("section", { class: "card gcard" },
-      el("div", { class: "top" }, iconEl(sv.icon, sv.game, 34), el("div", { style: "min-width:0" }, el("h3", { text: sv.name }), el("div", { class: "muted", style: "font-size:12.5px", text: sv.game })), el("span", { class: "grow" }),
-        el("span", { class: "pill", "data-s": sv.state, text: stateWord(sv) })),
-      el("p", { text: running ? `Up ${fmtUp(sv.uptime_s || 0)}` : sv.description }));
-    if (sv.progress) {
-      const ph = el("span"), pc = el("b"), tr = el("div", { class: "track" }, el("div", { class: "fill" }));
-      const wrap = el("div", { class: "prog" }, el("div", { class: "prog-top" }, ph, pc), tr);
-      renderProgress(wrap, ph, pc, tr, sv.progress); card.append(wrap);
-    }
-    const quick = el("button", { class: "btn small " + (running ? "danger" : "primary"), type: "button",
-      text: !sv.installed ? "Install" : running ? "Stop" : "Start" });
-    quick.disabled = busy;
-    quick.onclick = async () => {
-      quick.disabled = true;
-      try { await api("POST", `/api/servers/${sv.id}/${!sv.installed ? "update" : running ? "stop" : "start"}`); } catch (e) { toast(e.message, true); }
-      pollServers();
-    };
-    card.append(el("div", { class: "row" }, quick, el("a", { class: "btn small ghost", href: "#" + sv.id, style: "text-decoration:none", text: "Open" })));
-    box.append(card);
-  }
+  box.querySelector(".empty")?.remove();
+  const seen = new Set();
+  S.servers.forEach((sv, i) => {
+    seen.add(sv.id);
+    let o = OV.get(sv.id);
+    if (!o || o.sig !== ovSig(sv)) { const n = ovCard(sv); if (o) o.card.replaceWith(n.card); OV.set(sv.id, o = n); }
+    ovPatch(o, sv);
+    if (box.children[i] !== o.card) box.insertBefore(o.card, box.children[i] || null);
+  });
+  for (const [id, o] of OV) if (!seen.has(id)) { o.card.remove(); OV.delete(id); }
 }
 
 /* ---------- add game ---------- */
