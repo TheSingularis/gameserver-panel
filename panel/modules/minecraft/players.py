@@ -27,6 +27,7 @@ KINDS = {  # list id -> file
 }
 PROFILE_API = "https://api.mojang.com/users/profiles/minecraft/"
 BAN_REASON = "Banned by an operator."
+ONLINE_REPLY = re.compile(r"There are \d+ of a max of \d+ players online:\s*(.*?)\s*$")  # the game's answer to `list`
 
 
 def offline_uuid(name: str) -> str:
@@ -45,6 +46,16 @@ def clean_reason(text: object) -> str:
 
 def now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
+
+
+def online_from_log(lines: list[str]) -> list[str] | None:
+    """Who the game said was online, from the console lines after the last `> list` we typed; None if it has not answered."""
+    start = max((i for i, ln in enumerate(lines) if ln.strip() == "> list"), default=-1)
+    for ln in reversed(lines[start + 1:]):
+        m = ONLINE_REPLY.search(ln)
+        if m:
+            return [n.strip() for n in m.group(1).split(",") if n.strip()]
+    return None
 
 
 class PlayersMixin:
@@ -79,6 +90,18 @@ class PlayersMixin:
         return {"lists": {k: self._read_list(k) for k in KINDS},
                 "info": {"whitelist_enabled": props.get("white-list", "false").lower() == "true",
                          "online_mode": props.get("online-mode", "true").lower() != "false"}}
+
+    def online_players(self, console_lines: list[str]) -> list[str] | None:
+        return online_from_log(console_lines)
+
+    def known_players(self) -> list[str]:
+        """Everyone the game remembers having joined (its usercache.json, newest first); empty until someone has."""
+        try:
+            data = json.loads((self.server_dir / "usercache.json").read_text(errors="replace") or "[]")
+        except (OSError, ValueError):
+            return []
+        names = [str(e.get("name", "")) for e in data if isinstance(e, dict)]
+        return [n for n in dict.fromkeys(names) if NAME.fullmatch(n)]
 
     # -- checking what was asked ---------------------------------------------
     @staticmethod

@@ -107,3 +107,28 @@ async def test_lists_are_read_and_a_broken_file_is_reported(mc):
     (mc.srv.server_dir / "ops.json").write_text("not json")
     assert (await mc.get(f"/api/servers/{mc.sid}/players")).status_code == 409
     assert (await mc.get(f"/api/servers/{mc.sid}")).json()["players"] is True
+
+
+def test_online_names_are_read_from_the_reply_after_our_command():
+    from panel.modules.minecraft.players import online_from_log
+    old = "[12:00:00 INFO]: There are 1 of a max of 20 players online: Gone"
+    lines = [old, "> list", "[12:01:00 INFO]: There are 2 of a max of 20 players online: Steve, Alex"]
+    assert online_from_log(lines) == ["Steve", "Alex"]
+    assert online_from_log([old, "> list"]) is None  # the game has not answered yet: do not trust the older reply
+    assert online_from_log(["> list", "[12:01:00 INFO]: There are 0 of a max of 20 players online: "]) == []
+
+
+async def test_suggestions_combine_online_and_joined_players(mc, monkeypatch):
+    mc.srv.server_dir.mkdir(parents=True, exist_ok=True)
+    (mc.srv.server_dir / "usercache.json").write_text(json.dumps([{"name": "Alex", "uuid": "u1"}, {"name": "Bob", "uuid": "u2"}, {"name": "bad name!", "uuid": "u3"}]))
+    r = (await mc.get(f"/api/servers/{mc.sid}/players/suggest")).json()
+    assert r == {"online": [], "known": ["Alex", "Bob"], "live": False}  # stopped: nobody online to ask
+    sup = mc.srv.supervisor
+
+    async def send(cmd):
+        sup.log(f"> {cmd}")
+        sup.log("[12:01:00 INFO]: There are 1 of a max of 20 players online: Steve")
+    monkeypatch.setattr(sup, "send", send)
+    monkeypatch.setattr(sup, "state", "running")
+    r = (await mc.get(f"/api/servers/{mc.sid}/players/suggest")).json()
+    assert r["online"] == ["Steve"] and r["live"] is True and r["known"] == ["Alex", "Bob"]

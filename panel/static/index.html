@@ -193,6 +193,16 @@ a.btn.primary { color: var(--accent-ink); }
 
 /* ---- ports ---- */
 .pl-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.cb { position: relative; flex: 1 1 180px; max-width: 320px; }
+.cb .input { width: 100%; }
+.cb-menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 9px; box-shadow: var(--shadow); padding: 4px 0; }
+.cb-g { padding: 6px 12px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.cb-i { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; }
+.cb-i[aria-selected="true"], .cb-i:hover { background: var(--accent-soft); }
+.cb-i.raw { color: var(--accent); border-top: 1px solid var(--line); margin-top: 4px; }
+.cb-tag { margin-left: auto; font-size: 11.5px; color: var(--muted); } .cb-tag + .cb-tag { margin-left: 0; }
+.cb-tag.live { color: var(--ok); font-weight: 600; }
 .pl-add .input { flex: 1 1 180px; max-width: 320px; }
 .pl-sec + .pl-sec { margin-top: 22px; }
 .pl-sec h3 { margin-bottom: 8px; }
@@ -834,6 +844,64 @@ function renderPlayers() {
   const kinds = S.plView === "banned" ? [["banned-players", "Players"], ["banned-ips", "IP addresses"]] : [[S.plView, null]];
   for (const [kind, title] of kinds) body.append(plSection(kind, title, pl));
 }
+/* Player box: a text box with a dropdown of players the server knows (online now, anyone who has joined, the other lists), filtered
+   as you type and left out when already on this list. Whatever is typed is accepted as is, so a name never seen before still works. */
+let plSuggest = { at: 0, sid: null, data: null };
+async function loadSuggestions() {
+  if (plSuggest.sid === S.sid && Date.now() - plSuggest.at < 15000) return plSuggest.data;  // asking a running game costs a console line
+  try { plSuggest = { at: Date.now(), sid: S.sid, data: await api("GET", `/api/servers/${S.sid}/players/suggest`) }; } catch (_) { /* keep what we had */ }
+  return plSuggest.sid === S.sid ? plSuggest.data : null;
+}
+let plBoxes = 0;
+function playerBox(kind) {
+  const uid = "plb" + ++plBoxes;
+  const input = el("input", { class: "input", placeholder: kind === "banned-players" ? "Player to ban" : "Player name", autocomplete: "off", maxlength: "17", role: "combobox",
+    "aria-label": "Player name", "aria-expanded": "false", "aria-autocomplete": "list", "aria-controls": uid });
+  const menu = el("div", { class: "cb-menu", role: "listbox", id: uid, hidden: "" }), node = el("div", { class: "cb" }, input, menu);
+  let rows = [], active = -1, data = plSuggest.sid === S.sid ? plSuggest.data : null;  // what we already know shows at once
+  const lists = () => (S.pl && S.pl.lists) || {};
+  function candidates() {
+    const q = input.value.trim().toLowerCase(), have = new Map(), add = (name, tag) => {
+      const k = name.toLowerCase(), e = have.get(k) || { name, tags: [] }; if (tag && !e.tags.includes(tag)) e.tags.push(tag); have.set(k, e);
+    };
+    for (const n of (data && data.online) || []) add(n, "online");
+    for (const n of (data && data.known) || []) add(n);
+    for (const [list, tag] of [["whitelist", "whitelisted"], ["ops", "op"], ["banned-players", "banned"]]) for (const e of lists()[list] || []) if (e.name) add(e.name, tag);
+    const onThis = new Set((lists()[kind] || []).map((e) => (e.name || "").toLowerCase()));
+    const out = [...have.entries()].filter(([k]) => !onThis.has(k) && (!q || k.includes(q))).map(([, e]) => e);
+    return { q, online: out.filter((e) => e.tags.includes("online")), others: out.filter((e) => !e.tags.includes("online")), exact: have.has(q) };
+  }
+  function render() {
+    const c = candidates(); rows = []; menu.textContent = "";
+    const group = (title, list) => { if (!list.length) return; menu.append(el("div", { class: "cb-g", text: title })); for (const e of list) rows.push(item(e.name, e.tags)); };
+    function item(name, tags, raw) {
+      const n = rows.length, row = el("div", { class: "cb-i" + (raw ? " raw" : ""), role: "option", id: `${uid}-${n}`, "data-name": name },
+        el("span", { text: raw ? `Use "${name}"` : name }), ...(tags || []).map((t) => el("span", { class: "cb-tag" + (t === "online" ? " live" : ""), text: t })));
+      row.onmousedown = (ev) => { ev.preventDefault(); input.value = name; close(); };
+      menu.append(row); return row;
+    }
+    group("Online now", c.online); group("Known players", c.others);
+    if (c.q && !c.exact) item(input.value.trim(), null, true);
+    active = Math.min(active, rows.length - 1);
+    mark(); menu.hidden = !rows.length; input.setAttribute("aria-expanded", String(!!rows.length));
+  }
+  function mark() {
+    rows.forEach((r, i) => r.setAttribute("aria-selected", String(i === active)));
+    if (active >= 0 && rows[active]) { input.setAttribute("aria-activedescendant", rows[active].id); rows[active].scrollIntoView({ block: "nearest" }); } else input.removeAttribute("aria-activedescendant");
+  }
+  function close() { menu.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); }
+  input.addEventListener("focus", async () => { render(); data = await loadSuggestions(); if (document.activeElement === input) render(); });
+  input.addEventListener("input", () => { active = -1; render(); });
+  input.addEventListener("blur", close);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (menu.hidden) render(); if (!rows.length) return;
+      e.preventDefault(); active = (active + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length; mark();
+    } else if (e.key === "Enter" && !menu.hidden && active >= 0) { e.preventDefault(); input.value = rows[active].dataset.name; close(); }
+    else if (e.key === "Escape" && !menu.hidden) { e.preventDefault(); close(); }
+  });
+  return { node, input };
+}
 function plSection(kind, title, pl) {
   const rows = pl.lists[kind] || [], isIp = kind === "banned-ips", key = isIp ? "ip" : "name", sec = el("section", { class: "pl-sec" });
   if (title) sec.append(el("h3", { class: "eyebrow", text: title }));
@@ -859,10 +927,11 @@ function plSection(kind, title, pl) {
     }
     sec.append(el("div", { class: "xscroll" }, t));
   }
-  const name = el("input", { class: "input", placeholder: isIp ? "IP address to ban" : "Player name", autocomplete: "off", "aria-label": isIp ? "IP address" : "Player name", maxlength: "45" });
+  const box = isIp ? null : playerBox(kind);  // a dropdown of known players that also takes anything typed
+  const name = box ? box.input : el("input", { class: "input", placeholder: "IP address to ban", autocomplete: "off", "aria-label": "IP address", maxlength: "45" });
   const reason = kind.startsWith("banned") ? el("input", { class: "input", placeholder: "Reason (optional)", autocomplete: "off", "aria-label": "Reason", maxlength: "100" }) : null;
   const form = el("form", { class: "pl-add", onsubmit: async (e) => { e.preventDefault(); if (!name.value.trim()) return; await plAct(kind, "add", name.value.trim(), reason ? { reason: reason.value } : {}); } },
-    name, reason, el("button", { class: "btn primary", type: "submit", text: kind.startsWith("banned") ? "Ban" : "Add" }));
+    box ? box.node : name, reason, el("button", { class: "btn primary", type: "submit", text: kind.startsWith("banned") ? "Ban" : "Add" }));
   sec.append(form); return sec;
 }
 document.querySelectorAll("#subtabs button").forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });

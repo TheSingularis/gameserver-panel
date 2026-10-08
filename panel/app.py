@@ -236,6 +236,20 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         except RuntimeError as e:
             raise HTTPException(409, str(e))
 
+    @app.get("/api/servers/{sid}/players/suggest", dependencies=protected)
+    async def players_suggest(sid: str):
+        """Names to offer in the player boxes: who is online (asked of the game with `list`, so only while it runs) and who has joined before."""
+        mod, sup = players_module(sid), server(sid).supervisor
+        online = None
+        if sup.state == "running" and mod.console_input:
+            try:
+                await sup.send("list")
+                await asyncio.sleep(0.7)  # let the game answer
+                online = mod.online_players(sup.tail(200))
+            except (RuntimeError, ValueError):
+                online = None
+        return {"online": online or [], "known": mod.known_players(), "live": online is not None}
+
     @app.post("/api/servers/{sid}/players/{kind}/{action}", dependencies=protected)
     async def players_change(sid: str, kind: str, action: str, body: dict):
         mod, sup = players_module(sid), server(sid).supervisor
