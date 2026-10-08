@@ -2,8 +2,8 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request:
-  # Images are built at the top of every hour (if main has something new) or on demand from the Actions tab.
-  schedule: [{ cron: "0 * * * *" }]
+  # Images are built at 17 past every hour (if main has something new) or on demand from the Actions tab.
+  schedule: [{ cron: "17 * * * *" }]
   workflow_dispatch:
 jobs:
   test:
