@@ -1,0 +1,58 @@
+name: cleanup
+# Keeps registry and Actions storage small: old image versions and old workflow runs (with their artifacts) go.
+# Run it by hand with "dry run" on first to see exactly what would be deleted.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run: { description: "Only list what would be deleted", type: boolean, default: true }
+      keep_images: { description: "Newest image versions to keep (latest is always kept)", type: string, default: "10" }
+      keep_tag: { description: "Also keep the image version with this tag, e.g. sha-<commit> that kosmos runs", type: string, default: "" }
+      keep_run_days: { description: "Keep workflow runs this many days", type: string, default: "30" }
+  workflow_call:
+    inputs:
+      dry_run: { type: boolean, default: false }
+      keep_images: { type: string, default: "10" }
+      keep_tag: { type: string, default: "" }
+      keep_run_days: { type: string, default: "30" }
+permissions: { contents: read, packages: write, actions: write }
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DRY: ${{ inputs.dry_run }}
+      KEEP_IMAGES: ${{ inputs.keep_images }}
+      KEEP_TAG: ${{ inputs.keep_tag }}
+      KEEP_DAYS: ${{ inputs.keep_run_days }}
+    steps:
+      - name: Old image versions
+        run: |
+          set -euo pipefail
+          owner="$GITHUB_REPOSITORY_OWNER"
+          gh api --paginate "/users/$owner/packages/container/kosmos/versions?per_page=100" --jq '.[]' | jq -s '.' > versions.json
+          total=$(jq length versions.json)
+          jq -r --argjson n "$KEEP_IMAGES" --arg kt "$KEEP_TAG" '
+            sort_by(.created_at) | reverse | to_entries
+            | map(select(.key >= $n) | .value
+                  | select(((.metadata.container.tags // []) | index("latest") | not)
+                           and (($kt == "") or ((.metadata.container.tags // []) | index($kt) | not))))
+            | .[] | [.id, .created_at, ((.metadata.container.tags // []) | join(","))] | @tsv' versions.json > doomed.tsv
+          doomed=$(wc -l < doomed.tsv)
+          echo "image versions: $total total, keeping $((total - doomed)), deleting $doomed"
+          cat doomed.tsv
+          if [ "$DRY" = "true" ]; then echo "dry run: nothing deleted"; exit 0; fi
+          while IFS=$'\t' read -r id _; do
+            gh api -X DELETE "/users/$owner/packages/container/kosmos/versions/$id"
+          done < doomed.tsv
+      - name: Old workflow runs and their artifacts
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "-$KEEP_DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+            --jq ".workflow_runs[] | select(.status == \"completed\" and .created_at < \"$cutoff\") | [.id, .created_at, .name] | @tsv" > oldruns.tsv
+          echo "workflow runs older than $KEEP_DAYS days: $(wc -l < oldruns.tsv)"
+          cat oldruns.tsv
+          if [ "$DRY" = "true" ]; then echo "dry run: nothing deleted"; exit 0; fi
+          while IFS=$'\t' read -r id _; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id"
+          done < oldruns.tsv

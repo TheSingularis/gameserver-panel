@@ -2,8 +2,7 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request:
-  # Images are built at 17 past every hour (if main has something new) or on demand from the Actions tab.
-  schedule: [{ cron: "17 * * * *" }]
+  # Run workflow in the Actions tab builds and publishes the image of the branch you pick (main) on demand.
   workflow_dispatch:
 jobs:
   test:
@@ -13,27 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install -r requirements-dev.txt && pytest -q
-  plan:
-    runs-on: ubuntu-latest
-    permissions: { contents: read, packages: read }
-    outputs: { build: "${{ steps.p.outputs.build }}" }
-    steps:
-      - uses: docker/login-action@v3
-        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
-      # push/PR: never build. Manual run: always build. Hourly run: build only when this commit has no image yet.
-      - id: p
-        run: |
-          build=false
-          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
-            build=true
-          elif [ "${{ github.event_name }}" = schedule ]; then
-            docker buildx imagetools inspect "ghcr.io/thesingularis/kosmos:sha-${{ github.sha }}" >/dev/null 2>&1 || build=true
-          fi
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "build image for ${{ github.sha }}: $build"
   image:
-    needs: [test, plan]
-    if: github.ref == 'refs/heads/main' && needs.plan.outputs.build == 'true'
+    needs: test
+    if: github.ref == 'refs/heads/main'
     # One image push at a time, in merge order: a queued run replaces older
     # queued ones, so the newest commit always publishes `latest` last.
     concurrency: { group: image-latest, cancel-in-progress: false }
@@ -46,9 +27,16 @@ jobs:
       - id: built
         run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
+        env:
+          # No ".dockerbuild" build-record artifact per run (they pile up in Actions storage).
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+          DOCKER_BUILD_SUMMARY: "false"
         with:
           context: .
           push: true
+          # A plain single-platform image: no provenance/SBOM manifests, so every untagged version is a real leftover.
+          provenance: false
+          sbom: false
           tags: |
             ghcr.io/thesingularis/kosmos:latest
             ghcr.io/thesingularis/kosmos:sha-${{ github.sha }}
@@ -56,3 +44,10 @@ jobs:
           build-args: |
             PANEL_COMMIT=${{ github.sha }}
             PANEL_BUILT=${{ steps.built.outputs.date }}
+  # Off until the repository variable AUTO_PRUNE is set to "true" (Settings > Secrets and variables > Actions > Variables).
+  prune:
+    needs: image
+    if: vars.AUTO_PRUNE == 'true'
+    permissions: { contents: read, packages: write, actions: write }
+    uses: ./.github/workflows/cleanup.yml
+    with: { dry_run: false }
