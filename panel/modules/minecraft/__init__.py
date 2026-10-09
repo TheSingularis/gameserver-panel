@@ -20,6 +20,7 @@ import httpx
 
 from ..base import ConfigField, GameModule, LaunchSpec, LogFn, Port
 from ...archive import UnsafeArchive, safe_extract
+from .content import ContentMixin
 from .players import PlayersMixin
 
 MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
@@ -131,7 +132,7 @@ def kind_of(entry: str) -> str:
     return "script" if entry.endswith(".sh") else "args" if entry.endswith(".txt") else "jar"
 
 
-class Minecraft(PlayersMixin, GameModule):
+class Minecraft(ContentMixin, PlayersMixin, GameModule):
     id = "minecraft"
     name = "Minecraft: Java Edition"
     description = "Java Edition server, Paper (plugins, faster) or Vanilla (Mojang's own). Needs the EULA accepted once."
@@ -335,7 +336,7 @@ class Minecraft(PlayersMixin, GameModule):
         # Worlds (Vanilla/old Paper keep the nether and end beside the main world), who may join, plugins with their
         # settings, and the server's own root settings files (Paper/Spigot/Bukkit) and icon.
         fixed = [level, f"{level}_nether", f"{level}_the_end", "ops.json", "whitelist.json",
-                 "banned-players.json", "banned-ips.json", "plugins", "config",
+                 "banned-players.json", "banned-ips.json", "plugins", "config", "datapacks-disabled",
                  "bukkit.yml", "spigot.yml", "commands.yml", "permissions.yml", "help.yml", "server-icon.png", "usercache.json"]
         return fixed + [d for d in self._world_dirs() if d not in fixed]
 

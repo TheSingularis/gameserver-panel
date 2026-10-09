@@ -5,6 +5,7 @@ import contextlib
 import hmac
 import logging
 import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
@@ -269,6 +270,69 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         except RuntimeError as e:
             raise HTTPException(409, str(e))
 
+    # ---- datapacks and plugins -------------------------------------------------
+    def content_module(sid: str):
+        mod = server(sid).module
+        if not mod.content_kinds():
+            raise HTTPException(404, f"{mod.name} has nothing to upload here")
+        return mod
+
+    def content_state(sid: str) -> str:
+        sup = server(sid).supervisor
+        if sup.state not in ("running", "stopped", "crashed"):
+            raise HTTPException(409, f"server is {sup.state}; try again when it has settled")
+        return sup.state
+
+    async def content_payload(mod, sup, kind: str):
+        return await mod.content_list(kind, sup.state == "running")
+
+    @app.get("/api/servers/{sid}/content/{kind}", dependencies=protected)
+    async def content_get(sid: str, kind: str):
+        mod = content_module(sid)
+        try:
+            return await content_payload(mod, server(sid).supervisor, kind)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+
+    async def content_finish(sid: str, kind: str, mod, sup, commands: list[str]):
+        for cmd in commands:  # the game applies datapack changes itself
+            await sup.send(cmd)
+        if commands:
+            await asyncio.sleep(0.7)
+        return {**(await content_payload(mod, sup, kind)), "applied": "live" if commands else "file"}
+
+    @app.post("/api/servers/{sid}/content/{kind}/upload", dependencies=protected)
+    async def content_upload(sid: str, kind: str, request: Request, name: str = ""):
+        """Raw request body = the file; `name` is the file's name."""
+        mod = content_module(sid)
+        sup = server(sid).supervisor
+        running = content_state(sid) == "running"
+        tmp = await stream_to_temp(request, sid)
+        try:
+            commands = mod.content_add(kind, tmp, name, running)
+            return await content_finish(sid, kind, mod, sup, commands)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    @app.post("/api/servers/{sid}/content/{kind}/{action}", dependencies=protected)
+    async def content_change(sid: str, kind: str, action: str, body: dict):
+        mod = content_module(sid)
+        sup = server(sid).supervisor
+        running = content_state(sid) == "running"
+        try:
+            commands = mod.content_change(kind, action, str(body.get("name", "")), running)
+            return await content_finish(sid, kind, mod, sup, commands)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+
     @app.post("/api/servers/{sid}/command", dependencies=protected)
     async def command(sid: str, body: dict):
         sup = server(sid).supervisor
@@ -317,20 +381,14 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         p.write_text(text)
         return {"ok": True, "note": "restart the server to apply"}
 
-    @app.post("/api/servers/{sid}/upload", dependencies=protected)
-    async def upload(sid: str, request: Request):
-        """Raw request body = the file (a pack zip). Streamed to disk so a multi-GB pack never sits in memory."""
-        s = server(sid)
-        if not s.module.upload_accept:
-            raise HTTPException(404, f"{s.module.name} does not take uploads")
-        if s.supervisor.state not in ("stopped", "crashed"):
-            raise HTTPException(409, f"stop the server first (it is {s.supervisor.state})")
+    async def stream_to_temp(request: Request, sid: str) -> Path:
+        """Stream the raw request body to a temp file so a multi-GB upload never sits in memory; the caller deletes it."""
         declared = int(request.headers.get("content-length") or 0)
         if declared > MAX_UPLOAD:
             raise HTTPException(413, f"the file is larger than the {MAX_UPLOAD >> 30} GiB limit")
         tmp_dir = settings.data_dir / ".uploads"
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        tmp = tmp_dir / f"{sid}-{os.getpid()}.part"
+        tmp = tmp_dir / f"{sid}-{os.getpid()}-{uuid.uuid4().hex[:8]}.part"
         size = 0
         try:
             with tmp.open("wb") as f:
@@ -341,6 +399,21 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
                     f.write(chunk)
             if not size:
                 raise HTTPException(400, "no file received")
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+        return tmp
+
+    @app.post("/api/servers/{sid}/upload", dependencies=protected)
+    async def upload(sid: str, request: Request):
+        """Raw request body = the file (a pack zip). Streamed to disk so a multi-GB pack never sits in memory."""
+        s = server(sid)
+        if not s.module.upload_accept:
+            raise HTTPException(404, f"{s.module.name} does not take uploads")
+        if s.supervisor.state not in ("stopped", "crashed"):
+            raise HTTPException(409, f"stop the server first (it is {s.supervisor.state})")
+        tmp = await stream_to_temp(request, sid)
+        try:
             try:
                 await s.supervisor.upload(tmp)
             except RuntimeError as e:

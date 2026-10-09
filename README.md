@@ -64,6 +64,8 @@ Worlds (`level-name`, plus its `_nether` and `_the_end`), `ops.json`, the whitel
 everything else is re-downloaded. The stop timeout is 90 s so a big world can save before the process is killed.
 The **Players** tab manages the whitelist, operators and bans. While the server runs it types the matching console command (`whitelist add`, `op`, `ban`...) so changes apply instantly; while it is stopped it edits the JSON lists directly and looks the player's UUID up on Mojang (or computes the offline one when `online-mode` is off).
 
+The **Datapacks** tab (Paper and Vanilla) uploads and manages `<world>/datapacks`. It checks that a zip has `pack.mcmeta` at the top. While the server runs, a new pack triggers a reload and switching a pack on or off types `datapack enable|disable`; while it is stopped, a switched-off pack is moved to `datapacks-disabled/<world>/`, so the world's `level.dat` is never edited. Removing a pack needs the server stopped. The **Plugins** tab (Paper) uploads `.jar` files after checking for `plugin.yml`/`paper-plugin.yml`, and switches a plugin off by renaming it to `.jar.off`. Plugin changes need the server stopped, and a plugin's settings folder is never deleted.
+
 The image bundles Java 8, 17, 21 and 25 (under `/opt/java/<major>`) and the panel picks the one a server's Minecraft version needs; set `java` in `panel.properties` to force one.
 
 **Modpacks (Forge, NeoForge, Fabric, ...).** Choose "Modpack server zip" as the server type when adding a Minecraft server and pick the zip, or upload it later from the

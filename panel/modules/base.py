@@ -78,6 +78,11 @@ class GameModule:
     # sets it implements player_lists(), player_command() and player_edit() (see minecraft/players.py).
     players: bool = False
 
+    def content_kinds(self) -> list[dict]:
+        """Uploadable content the game manages on its own tab (datapacks, plugins): [{id, label, accept}]. A module that
+        returns any implements content_list(), content_add() and content_change() (see minecraft/content.py)."""
+        return []
+
     def __init__(self, config_dir: Path, server_dir: Path):
         self.config_dir = config_dir
         self.server_dir = server_dir
@@ -169,5 +174,6 @@ class GameModule:
             "upload_accept": self.upload_accept,
             "console_input": self.console_input,
             "players": self.players,
+            "content": self.content_kinds(),
             "can_reinstall": self.reinstall_blocker() is None,
         }
