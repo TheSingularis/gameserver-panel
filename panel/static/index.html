@@ -389,6 +389,8 @@ a.btn.primary { color: var(--accent-ink); }
         <button type="button" role="tab" data-tab="console">Console</button>
         <button type="button" role="tab" data-tab="config" id="tabConfig">Config</button>
         <button type="button" role="tab" data-tab="players" id="tabPlayers" hidden>Players</button>
+        <button type="button" role="tab" data-tab="datapacks" id="tabDatapacks" hidden>Datapacks</button>
+        <button type="button" role="tab" data-tab="plugins" id="tabPlugins" hidden>Plugins</button>
         <button type="button" role="tab" data-tab="network">Network</button>
         <button type="button" role="tab" data-tab="advanced">Advanced</button>
       </div>
@@ -416,6 +418,9 @@ a.btn.primary { color: var(--accent-ink); }
           <div id="plBody"></div>
         </div>
       </div>
+
+      <div id="tpDatapacks" data-panel="datapacks" hidden><div class="card pad" id="ctDatapacks"></div></div>
+      <div id="tpPlugins" data-panel="plugins" hidden><div class="card pad" id="ctPlugins"></div></div>
 
       <div id="tpConfig" data-panel="config" hidden>
         <div class="card pad">
@@ -867,6 +872,9 @@ async function openServer(sid) {
   showName(d.name);
   $("#tabConfig").hidden = !d.config_files.length;
   $("#tabPlayers").hidden = !d.players;
+  for (const k of ["datapacks", "plugins"]) $("#tab" + k[0].toUpperCase() + k.slice(1)).hidden = !(d.content || []).some((c) => c.id === k);
+  if ((S.tab === "datapacks" || S.tab === "plugins") && !(d.content || []).some((c) => c.id === S.tab)) S.tab = "console";
+  S.ct = {};
   if (S.tab === "config" && !d.config_files.length) S.tab = "console";
   if (S.tab === "players" && !d.players) S.tab = "console";
   S.pl = null;
@@ -887,6 +895,88 @@ function setTab(t) {
   document.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== t; });
   if (t === "console") { const b = $("#log"); if ($("#follow").checked) b.scrollTop = b.scrollHeight; }
   if (t === "players") loadPlayers();
+  if (t === "datapacks" || t === "plugins") loadContent(t);
+}
+
+/* ---------- datapacks and plugins: upload, switch on and off, remove ---------- */
+const CT_TEXT = {
+  datapacks: { empty: "No datapacks yet.", drop: "Drop a datapack .zip here, or choose one", accept: ".zip",
+    hint: "A datapack is a .zip with pack.mcmeta at the top, or a folder in the world's datapacks folder. Some add content to your world, so only add ones you trust." },
+  plugins: { empty: "No plugins yet.", drop: "Drop a plugin .jar here, or choose one", accept: ".jar",
+    hint: "Plugins run with full access to your server, so only add ones you trust. Changes apply when the server next starts, and a plugin's settings folder is always kept." },
+};
+const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+async function loadContent(kind) {
+  const sid = S.sid; if (!S.detail) return;
+  try { const r = await api("GET", `/api/servers/${sid}/content/${kind}`); if (S.sid !== sid) return; S.ct[kind] = r; renderContent(kind); }
+  catch (e) { toast(e.message, true); }
+}
+async function ctAct(kind, action, name) {
+  try {
+    const r = await api("POST", `/api/servers/${S.sid}/content/${kind}/${action}`, { name });
+    S.ct[kind] = r; renderContent(kind);
+    toast(r.applied === "live" ? "Sent to the server. Its reply is in the console." : kind === "plugins" ? "Done. It applies when the server starts." : "Saved. It applies when the server starts.");
+  } catch (e) { toast(e.message, true); }
+}
+function ctUpload(kind, file, status) {
+  return new Promise((resolve) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/servers/${S.sid}/content/${kind}/upload?name=${encodeURIComponent(file.name)}`);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) status.textContent = `Uploading ${Math.round(e.loaded * 100 / e.total)}%`; };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch (_) {}
+      if (x.status === 401) { showLogin(); toast("Please log in again.", true); }
+      else if (x.status >= 200 && x.status < 300) { S.ct[kind] = j; renderContent(kind); toast(j.applied === "live" ? "Added and reloaded. The server's reply is in the console." : "Added. It applies when the server starts."); }
+      else toast(j.detail || `The upload failed (${x.status}).`, true);
+      resolve();
+    };
+    x.onerror = () => { toast("The upload was interrupted.", true); resolve(); };
+    x.send(file);
+  });
+}
+function renderContent(kind) {
+  const r = S.ct[kind], box = $("#ct" + kind[0].toUpperCase() + kind.slice(1)), T = CT_TEXT[kind]; if (!r) return;
+  const running = !!sv() && sv().state === "running";
+  box.textContent = "";
+  box.append(el("p", { class: "muted", style: "margin:0 0 12px;font-size:13.5px", text: kind === "plugins"
+    ? "Stop the server to add, switch off or remove a plugin: Paper can't change plugins safely while it runs." + (running ? " The server is running now." : "")
+    : r.live ? "The server is running: adding and switching packs on or off applies instantly. Removing needs the server stopped."
+      : "The server is stopped: changes are saved and apply when it starts." }));
+  const input = el("input", { type: "file", accept: T.accept, hidden: "" }), status = el("span", { text: T.drop });
+  const zone = el("label", { class: "drop", style: "display:block;border:1px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);cursor:pointer;margin-bottom:12px" }, status, input);
+  const go = async (f) => { if (!f) return; zone.style.opacity = ".6"; await ctUpload(kind, f, status); status.textContent = T.drop; zone.style.opacity = ""; input.value = ""; };
+  input.onchange = () => go(input.files[0]);
+  zone.ondragover = (e) => { e.preventDefault(); zone.style.borderColor = "var(--accent, currentColor)"; };
+  zone.ondragleave = () => { zone.style.borderColor = ""; };
+  zone.ondrop = (e) => { e.preventDefault(); zone.style.borderColor = ""; go(e.dataTransfer.files[0]); };
+  box.append(zone);
+  if (!r.items.length) box.append(el("p", { class: "pl-empty", text: T.empty }));
+  else {
+    const t = el("table", { class: "ports" }, el("thead", {}, el("tr", {}, el("th", { text: kind === "plugins" ? "Plugin" : "Datapack" }), el("th", { text: "Status" }), el("th", {}))), el("tbody"));
+    for (const it of r.items) {
+      const title = kind === "plugins" ? (it.title || it.name) + (it.version ? " " + it.version : "") : it.name;
+      const detail = kind === "plugins" ? [it.authors && "by " + it.authors, it.has_config && "settings kept", it.broken && "could not read this jar", fmtSize(it.size)]
+        : [it.description, it.format && "pack format " + it.format, it.folder ? "folder" : fmtSize(it.size), it.broken && "could not read pack.mcmeta"];
+      const on = it.enabled, off = on ? "disable" : "enable";
+      const blocked = (kind === "plugins" && running) || it.needs_live;
+      const toggle = el("button", { class: "btn small", type: "button", text: on ? "Switch off" : "Switch on", ...(blocked ? { disabled: "" } : {}),
+        title: it.needs_live ? "The world switched this pack off. Start the server to switch it on." : "", onclick: async () => {
+          if (!on && it.fits === false && !(await confirmModal(`Switch on ${it.name}?`, "This pack says it was made for other Minecraft versions than this server runs. It may not work, or the server may log errors when loading it.", "Switch on", true))) return;
+          ctAct(kind, off, it.name);
+        } });
+      const rm = el("button", { class: "btn small ghost", type: "button", text: "Remove", ...(running ? { disabled: "" } : {}), onclick: async () => {
+        if (await confirmModal(`Remove ${it.name}?`, kind === "plugins" ? "The plugin file is deleted. Its settings folder stays, so reinstalling brings your settings back." : "The datapack is deleted from the world's datapacks folder. The world itself is not changed.", "Remove", true)) ctAct(kind, "remove", it.name);
+      } });
+      t.tBodies[0].append(el("tr", {},
+        el("td", {}, el("div", { text: title }), el("div", { class: "muted", style: "font-size:12px", text: detail.filter(Boolean).join(" · ") })),
+        el("td", {}, el("span", { class: "pill" + (on ? " ok" : ""), text: on ? "Enabled" : "Disabled" }), it.fits === false ? " " : null,
+          it.fits === false ? el("span", { class: "pill", style: "color:var(--warn)", title: "This pack says it was made for other Minecraft versions. It may not work, or the server may refuse to load it.", text: "May not match this version" }) : null),
+        el("td", { style: "text-align:right;white-space:nowrap" }, toggle, " ", rm)));
+    }
+    box.append(el("div", { class: "xscroll" }, t));
+  }
+  box.append(el("p", { class: "muted", style: "margin:12px 0 0;font-size:12.5px", text: T.hint }));
 }
 
 /* ---------- players: whitelist, operators, bans (games that keep such lists) ---------- */
@@ -1054,7 +1144,7 @@ function renderPrompt() {  // things a game needs from you before it can run (ac
 }
 function renderStatus() {
   const s = sv(); if (!s) return;
-  if (lastState !== null && lastState !== s.state) { setTimeout(refreshPorts, 1200); if (S.tab === "players") loadPlayers(); }  // sockets appear shortly after the state flips
+  if (lastState !== null && lastState !== s.state) { setTimeout(refreshPorts, 1200); if (S.tab === "players") loadPlayers(); if (S.tab === "datapacks" || S.tab === "plugins") loadContent(S.tab); }  // sockets appear shortly after the state flips
   lastState = s.state;
   $("#lamp").dataset.s = s.state;
   $("#stateWord").textContent = stateWord(s);
