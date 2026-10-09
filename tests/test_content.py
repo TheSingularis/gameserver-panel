@@ -159,3 +159,49 @@ async def test_plugin_uploads_must_look_like_plugins(mc):
     r = await up(mc, "plugins", "Mod.jar", make_zip({"META-INF/mods.toml": "x"}))
     assert r.status_code == 400 and "plugin.yml" in r.json()["detail"]
     assert (await up(mc, "plugins", "x.zip", JAR)).status_code == 400
+
+
+from panel.modules.minecraft.content import declared_range, format_fits, server_data_format  # noqa: E402
+
+
+def write_jar(d, pack_version):
+    (d / "server.jar").write_bytes(make_zip({"version.json": json.dumps({"id": "x", "pack_version": pack_version})}))
+
+
+def test_server_format_from_either_version_json_schema(tmp_path):
+    assert server_data_format(tmp_path) is None
+    write_jar(tmp_path, {"resource": 64, "data": 81})  # 1.21.8
+    assert server_data_format(tmp_path) == (81, 0)
+    write_jar(tmp_path, {"resource_major": 97, "resource_minor": 1, "data_major": 121, "data_minor": 2})  # 26.3 style
+    assert server_data_format(tmp_path) == (121, 2)
+    (tmp_path / "server.jar").write_bytes(b"junk")
+    assert server_data_format(tmp_path) is None
+
+
+@pytest.mark.parametrize("pack,server,fits", [
+    ({"pack_format": 81}, (81, 0), True),
+    ({"pack_format": 48}, (81, 0), False),
+    ({"pack_format": 48, "supported_formats": [48, 81]}, (81, 0), True),
+    ({"pack_format": 48, "supported_formats": {"min_inclusive": 48, "max_inclusive": 81}}, (60, 0), True),
+    ({"min_format": 48, "max_format": 81}, (81, 3), True),  # a bare number covers every minor of that major
+    ({"min_format": [82, 0], "max_format": [82, 1]}, (82, 2), False),
+    ({"min_format": [82, 0], "max_format": [82, 1]}, (82, 1), True),
+    ({"min_format": 90}, (81, 0), False),
+    ({}, (81, 0), None),
+])
+def test_pack_range_against_the_server(pack, server, fits):
+    assert format_fits(declared_range(pack), server) is fits
+
+
+def test_unknown_server_format_means_no_verdict():
+    assert format_fits(declared_range({"pack_format": 48}), None) is None
+
+
+async def test_list_flags_packs_for_other_versions(mc):
+    write_jar(mc.dir, {"resource": 64, "data": 81})
+    await up(mc, "datapacks", "Old.zip", PACK)  # pack_format 48
+    newer = make_zip({"pack.mcmeta": json.dumps({"pack": {"pack_format": 81, "description": "n"}}), "data/a": "x"})
+    r = await up(mc, "datapacks", "New.zip", newer)
+    got = {i["name"]: i["fits"] for i in r.json()["items"]}
+    assert got == {"New.zip": True, "Old.zip": False}
+    assert "range" not in r.json()["items"][0]

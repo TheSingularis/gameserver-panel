@@ -127,6 +127,58 @@ def _fmt(value) -> str | None:
     return None
 
 
+def _bound(value, top: bool):
+    """A format bound as (major, minor). A bare number covers every minor of that major, so as an upper bound it is open."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return (value, 10**9 if top else 0)
+    if isinstance(value, list) and len(value) == 2 and all(isinstance(x, int) for x in value):
+        return (value[0], value[1])
+    return None
+
+
+def declared_range(pack: dict):
+    """The data-pack formats a pack says it works with, as ((major, minor), (major, minor)), or None when it says nothing.
+    Reads the old pack_format and supported_formats fields as well as the newer min_format and max_format."""
+    los, his = [], []
+
+    def add(lo, hi):
+        if lo and hi:
+            los.append(lo)
+            his.append(hi)
+    if "pack_format" in pack:
+        add(_bound(pack["pack_format"], False), _bound(pack["pack_format"], True))
+    sf = pack.get("supported_formats")
+    if isinstance(sf, dict):
+        add(_bound(sf.get("min_inclusive"), False), _bound(sf.get("max_inclusive"), True))
+    elif isinstance(sf, list) and len(sf) == 2 and all(isinstance(x, int) for x in sf):
+        add(_bound(sf[0], False), _bound(sf[1], True))
+    elif sf is not None:
+        add(_bound(sf, False), _bound(sf, True))
+    if "min_format" in pack or "max_format" in pack:
+        add(_bound(pack.get("min_format", pack.get("max_format")), False), _bound(pack.get("max_format", pack.get("min_format")), True))
+    return (min(los), max(his)) if los else None
+
+
+def server_data_format(server_dir: Path, jar: str = "server.jar") -> tuple[int, int] | None:
+    """(major, minor) data-pack format of the installed game, from the version.json inside its jar; None when unknown."""
+    try:
+        with zipfile.ZipFile(server_dir / jar) as zf:
+            data = json.loads(zf.read("version.json"))["pack_version"]
+        major = data.get("data_major", data.get("data"))
+        return (int(major), int(data.get("data_minor", 0))) if isinstance(major, int) else None
+    except (OSError, KeyError, ValueError, TypeError, zipfile.BadZipFile):
+        return None
+
+
+def format_fits(rng, server: tuple[int, int] | None) -> bool | None:
+    """Whether a pack's declared range includes the server's format; None when either side is unknown."""
+    if not rng or not server:
+        return None
+    return rng[0] <= server <= rng[1]
+
+
 def describe_pack_meta(raw: bytes) -> dict:
     try:
         meta = json.loads(raw.decode("utf-8-sig"))
@@ -141,7 +193,7 @@ def describe_pack_meta(raw: bytes) -> dict:
     elif isinstance(desc, dict):
         desc = str(desc.get("text", ""))
     fmt = _fmt(pack.get("pack_format")) or _fmt(pack.get("min_format"))
-    return {"description": " ".join(str(desc).split())[:200], "format": fmt}
+    return {"description": " ".join(str(desc).split())[:200], "format": fmt, "range": declared_range(pack)}
 
 
 def check_datapack_zip(path: Path) -> dict:
@@ -247,6 +299,7 @@ class ContentMixin:
         if not running and live:
             self._save_live_state({})  # the world has saved on stop: level.dat is the truth again
         items = []
+        server_fmt = server_data_format(self.server_dir)
         for base, aside in ((self._pack_dir(), False), (self._aside_dir(), True)):
             if not base.is_dir():
                 continue
@@ -259,6 +312,8 @@ class ContentMixin:
                 items.append({"name": p.name, "folder": p.is_dir(), "size": self._size(p), "enabled": enabled, "aside": aside,
                               "needs_live": (not aside) and not enabled and not running and f"file/{p.name}" in disabled_in_world,
                               **self._pack_meta(p)})
+                fits = format_fits(items[-1].pop("range", None), server_fmt)
+                items[-1]["fits"] = fits  # False = the pack was made for other game versions
         return {"items": items}
 
     def _plugin_jar_meta(self, p: Path) -> dict:

@@ -892,13 +892,17 @@ function renderContent(kind) {
       const on = it.enabled, off = on ? "disable" : "enable";
       const blocked = (kind === "plugins" && running) || it.needs_live;
       const toggle = el("button", { class: "btn small", type: "button", text: on ? "Switch off" : "Switch on", ...(blocked ? { disabled: "" } : {}),
-        title: it.needs_live ? "The world switched this pack off. Start the server to switch it on." : "", onclick: () => ctAct(kind, off, it.name) });
+        title: it.needs_live ? "The world switched this pack off. Start the server to switch it on." : "", onclick: async () => {
+          if (!on && it.fits === false && !(await confirmModal(`Switch on ${it.name}?`, "This pack says it was made for other Minecraft versions than this server runs. It may not work, or the server may log errors when loading it.", "Switch on", true))) return;
+          ctAct(kind, off, it.name);
+        } });
       const rm = el("button", { class: "btn small ghost", type: "button", text: "Remove", ...(running ? { disabled: "" } : {}), onclick: async () => {
         if (await confirmModal(`Remove ${it.name}?`, kind === "plugins" ? "The plugin file is deleted. Its settings folder stays, so reinstalling brings your settings back." : "The datapack is deleted from the world's datapacks folder. The world itself is not changed.", "Remove", true)) ctAct(kind, "remove", it.name);
       } });
       t.tBodies[0].append(el("tr", {},
         el("td", {}, el("div", { text: title }), el("div", { class: "muted", style: "font-size:12px", text: detail.filter(Boolean).join(" · ") })),
-        el("td", {}, el("span", { class: "pill" + (on ? " ok" : ""), text: on ? "Enabled" : "Disabled" })),
+        el("td", {}, el("span", { class: "pill" + (on ? " ok" : ""), text: on ? "Enabled" : "Disabled" }), it.fits === false ? " " : null,
+          it.fits === false ? el("span", { class: "pill", style: "color:var(--warn)", title: "This pack says it was made for other Minecraft versions. It may not work, or the server may refuse to load it.", text: "May not match this version" }) : null),
         el("td", { style: "text-align:right;white-space:nowrap" }, toggle, " ", rm)));
     }
     box.append(el("div", { class: "xscroll" }, t));
