@@ -118,3 +118,36 @@ def test_minecraft_server_properties_are_grouped_in_a_fixed_order():
     # settings the game only writes after its first start are offered only when the file has them
     assert next(f for f in fields if f["key"] == "rcon.password")["optional"] is True
     assert next(f for f in fields if f["key"] == "motd")["optional"] is False
+
+
+async def test_queued_servers_report_a_countdown_until_their_turn(tmp_path):
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    for n in "abc":
+        s = m.add("fake", n)
+        s.module.installed = n != "b"  # b has no game files: it is not queued and does not take a place
+        m.set_autostart(s.id, True)
+    seen = {}
+
+    async def sleep(t):
+        if not seen:  # first wait: look at what the page would be told
+            seen.update({sid: s.summary() for sid, s in m.servers.items()})
+    for s in m.servers.values():
+        async def fake_start(): pass
+        s.supervisor.start = fake_start
+    await m.run_autostart(60, 30, sleep)
+    assert (seen["a"]["autostart_pos"], seen["a"]["autostart_of"], seen["a"]["autostart_total"]) == (1, 2, 60)
+    assert (seen["c"]["autostart_pos"], seen["c"]["autostart_of"], seen["c"]["autostart_total"]) == (2, 2, 90)
+    assert 0 < seen["c"]["autostart_in"] <= 90 and "autostart_in" not in seen["b"]
+    assert all("autostart_in" not in s.summary() for s in m.servers.values())  # nothing waits once the run is over
+
+
+async def test_countdown_stops_when_switched_off_or_started_by_hand(tmp_path):
+    m = ServerManager(tmp_path, modules=FAKE_CATALOG)
+    s = m.add("fake", "a"); s.module.installed = True; m.set_autostart(s.id, True)
+    s.queued = {"t0": 0.0, "due": 1e12, "pos": 1, "of": 1}
+    assert "autostart_in" in s.summary()
+    s.supervisor.state = "running"  # started by hand: no longer waiting
+    assert "autostart_in" not in s.summary()
+    s.supervisor.state = "stopped"
+    m.set_autostart(s.id, False)
+    assert s.queued is None and "autostart_in" not in s.summary()
