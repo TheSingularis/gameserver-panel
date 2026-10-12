@@ -600,7 +600,16 @@ const clock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "
 const queueLeft = (sv) => Math.max(0, Math.ceil(((sv._due || 0) - Date.now()) / 1000));
 const queueText = (sv) => (queueLeft(sv) > 0 ? `Starts in ${clock(queueLeft(sv))}` : "Starting now");
 const queuePlace = (sv) => (sv.autostart_of > 1 ? ` · ${ord(sv.autostart_pos)} of ${sv.autostart_of}` : "");
-const stamp = (list) => { for (const s of list) if (queued(s)) s._due = Date.now() + s.autostart_in * 1000; return list; };
+/* The server reports the time left with sub-second precision; the page turns it into a due time on its own clock and keeps counting by itself.
+   A fresh report only moves that due time when it disagrees by more than network jitter, so polls never make the countdown hiccup. */
+const stamp = (list) => {
+  const before = new Map(S.servers.map((s) => [s.id, s]));
+  for (const s of list) if (queued(s)) {
+    const due = Date.now() + s.autostart_in * 1000, old = before.get(s.id);
+    s._due = old && old._due && Math.abs(old._due - due) < 1500 ? old._due : due;
+  }
+  return list;
+};
 function renderQueuedBar(phaseEl, pctEl, track, sv) {  // the amber bar that empties as the start gets closer
   phaseEl.textContent = "Queued to start with the container"; pctEl.textContent = clock(queueLeft(sv));
   track.classList.add("queued"); track.classList.remove("indet");
@@ -1596,11 +1605,14 @@ async function showVersion() {  // the page's own build, and a warning when the 
     if (live.commit !== mine.commit) { v.classList.add("stale"); v.textContent = `${label(mine)} · new build ${live.commit}, click to reload`; v.onclick = () => location.reload(); }
   } catch (_) {}
 }
-setInterval(() => {  // count the waiting servers down every second between the 2-second polls
-  if (!S.servers.some(queued)) return;
+let queueKey = "";
+setInterval(() => {  // count the waiting servers down between the 2-second polls: look often, redraw only when a displayed second changes
+  const key = S.servers.filter(queued).map((s) => s.id + ":" + queueLeft(s)).join();
+  if (!key || key === queueKey) { if (!key) queueKey = ""; return; }
+  queueKey = key;
   if (S.route === "overview") renderOverview();
   if (S.sid) renderStatus();
-}, 1000);
+}, 200);
 async function boot() {
   stopAll();
   try { S.servers = stamp((await api("GET", "/api/servers")).servers); } catch (_) { return; }
