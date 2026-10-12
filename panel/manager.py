@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
+import time
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,10 +43,16 @@ class Server:
     module: GameModule
     supervisor: Supervisor
     autostart: bool = False  # start with the container (see ServerManager.run_autostart)
+    queued: dict | None = None  # while waiting for its turn after a container start: monotonic t0 and due times, place in the queue
 
     def summary(self) -> dict:
+        extra = {}
+        if self.queued and self.supervisor.state == "stopped":  # a server started by hand is no longer waiting
+            q = self.queued
+            extra = {"autostart_in": max(0, math.ceil(q["due"] - time.monotonic())), "autostart_total": round(q["due"] - q["t0"]),
+                     "autostart_pos": q["pos"], "autostart_of": q["of"]}
         return {"id": self.id, "module": self.module_id, "name": self.name, "game": self.module.name,
-                "icon": self.icon, "autostart": self.autostart, "description": self.module.description, **self.supervisor.status()}
+                "icon": self.icon, "autostart": self.autostart, "description": self.module.description, **self.supervisor.status(), **extra}
 
 
 class ServerManager:
@@ -164,6 +172,8 @@ class ServerManager:
     def set_autostart(self, sid: str, on: bool) -> Server:
         srv = self.get(sid)
         srv.autostart = bool(on)
+        if not srv.autostart:
+            srv.queued = None  # switched off while waiting: no more countdown
         self._save()
         return srv
 
@@ -176,23 +186,33 @@ class ServerManager:
         queue = [s.id for s in self.servers.values() if s.autostart]
         if not queue:
             return
-        await sleep(delay)
-        started = False
-        for sid in queue:
-            srv = self.servers.get(sid)  # may have been removed or switched off during the wait
-            if not srv or not srv.autostart:
-                continue
-            if not srv.module.is_installed():
-                srv.supervisor.log("[panel] auto-start skipped: game files are not installed yet")
-                continue
-            if started:
-                await sleep(stagger)
-            started = True
-            try:
-                srv.supervisor.log("[panel] auto-starting with the container")
-                await srv.supervisor.start()
-            except Exception as e:  # keep going: one bad server must not block the rest
-                srv.supervisor.log(f"[panel] auto-start failed: {e}")
+        # Tell the page who is waiting and for how long (the ones that will really start, in order) so it can show a countdown.
+        t0, will_start = time.monotonic(), [sid for sid in queue if self.servers[sid].module.is_installed()]
+        for k, sid in enumerate(will_start):
+            self.servers[sid].queued = {"t0": t0, "due": t0 + delay + stagger * k, "pos": k + 1, "of": len(will_start)}
+        try:
+            await sleep(delay)
+            started = False
+            for sid in queue:
+                srv = self.servers.get(sid)  # may have been removed or switched off during the wait
+                if not srv or not srv.autostart:
+                    continue
+                if not srv.module.is_installed():
+                    srv.supervisor.log("[panel] auto-start skipped: game files are not installed yet")
+                    continue
+                if started:
+                    await sleep(stagger)
+                started = True
+                try:
+                    srv.supervisor.log("[panel] auto-starting with the container")
+                    await srv.supervisor.start()
+                except Exception as e:  # keep going: one bad server must not block the rest
+                    srv.supervisor.log(f"[panel] auto-start failed: {e}")
+                finally:
+                    srv.queued = None
+        finally:
+            for srv in self.servers.values():
+                srv.queued = None
 
     async def remove(self, sid: str) -> None:
         srv = self.get(sid)
