@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import os
 import time
 import re
@@ -49,7 +48,7 @@ class Server:
         extra = {}
         if self.queued and self.supervisor.state == "stopped":  # a server started by hand is no longer waiting
             q = self.queued
-            extra = {"autostart_in": max(0, math.ceil(q["due"] - time.monotonic())), "autostart_total": round(q["due"] - q["t0"]),
+            extra = {"autostart_in": max(0.0, round(q["due"] - time.monotonic(), 2)), "autostart_total": round(q["due"] - q["t0"]),
                      "autostart_pos": q["pos"], "autostart_of": q["of"]}
         return {"id": self.id, "module": self.module_id, "name": self.name, "game": self.module.name,
                 "icon": self.icon, "autostart": self.autostart, "description": self.module.description, **self.supervisor.status(), **extra}
