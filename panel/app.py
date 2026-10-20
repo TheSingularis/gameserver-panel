@@ -242,6 +242,8 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         """Names to offer in the player boxes: who is online (asked of the game with `list`, so only while it runs) and who has joined before."""
         mod, sup = players_module(sid), server(sid).supervisor
         online = None
+        if not mod.suggests_players:
+            return {"online": [], "known": [], "live": False}
         if sup.state == "running" and mod.console_input:
             try:
                 await sup.send("list")
@@ -259,6 +261,8 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         try:
             if sup.state == "running" and mod.console_input:  # the game applies it and writes its own files
                 await sup.send(mod.player_command(kind, action, body.get("value"), body))
+                if mod.edit_file_when_live:
+                    await mod.player_edit(kind, action, body.get("value"), body)
                 await asyncio.sleep(0.7)  # let it write the list before we read it back
                 applied = "live"
             else:

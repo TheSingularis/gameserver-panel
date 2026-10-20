@@ -77,6 +77,11 @@ class GameModule:
     # True when the game keeps lists of players (who may join, operators, bans) the Players tab can manage; a module that
     # sets it implements player_lists(), player_command() and player_edit() (see minecraft/players.py).
     players: bool = False
+    # With players: True when, on a running server, the panel also writes the list file after typing the command (the game keeps
+    # its lists in memory and may not save them); False when the game rewrites its own files (Minecraft).
+    edit_file_when_live: bool = False
+    # With players: True when the player boxes offer names (online now, known players); a game that bans by ID leaves them out.
+    suggests_players: bool = True
 
     def content_kinds(self) -> list[dict]:
         """Uploadable content the game manages on its own tab (datapacks, plugins): [{id, label, accept}]. A module that
