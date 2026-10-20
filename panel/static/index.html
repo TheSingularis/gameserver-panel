@@ -1090,6 +1090,17 @@ function playerBox(kind) {
   });
   return { node, input };
 }
+function isTimedBan(expires) { return !!expires && String(expires).toLowerCase() !== "forever"; }
+function banExpiry(expires) {  // "2026-10-21 12:00:00 +0000" as a countdown; "Never" for permanent bans
+  if (!isTimedBan(expires)) return "Never";
+  const m = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)$/.exec(String(expires));
+  const t = m ? Date.parse(`${m[1]}T${m[2]}${m[3]}:${m[4]}`) : NaN;
+  if (isNaN(t)) return String(expires);
+  const mins = Math.round((t - Date.now()) / 60000);
+  if (mins <= 0) return "Expired";
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60);
+  return d ? `in ${d} d, ${h} h` : h ? `in ${h} h, ${mins % 60} min` : `in ${mins} min`;
+}
 function plSection(kind, title, pl) {
   const rows = pl.lists[kind] || [], isIp = kind === "banned-ips", key = isIp ? "ip" : "name", sec = el("section", { class: "pl-sec" });
   if (title) sec.append(el("h3", { class: "eyebrow", text: title }));
@@ -1109,8 +1120,9 @@ function plSection(kind, title, pl) {
           sel.value = String(r.level ?? 4); cells.push(el("td", {}, sel));
         }
         cells.push(el("td", { text: r.bypassesPlayerLimit ? "Yes" : "No" }));
-      } else { cells.push(el("td", { text: r.reason || "" })); cells.push(el("td", { text: r.expires || "" })); }
-      cells.push(el("td", { style: "text-align:right" }, el("button", { class: "btn small ghost", type: "button", text: "Remove", onclick: () => plAct(kind, "remove", r[key]) })));
+      } else { cells.push(el("td", { text: r.reason || "" })); cells.push(el("td", { text: banExpiry(r.expires), title: r.expires || "" })); }
+      const timed = kind.startsWith("banned") && isTimedBan(r.expires);  // a ban with a timer: one button that lifts it
+      cells.push(el("td", { style: "text-align:right" }, el("button", { class: "btn small ghost", type: "button", text: timed ? "Clear timer" : "Remove", title: timed ? "Lifts this ban" : "", onclick: () => plAct(kind, "remove", r[key]) })));
       t.tBodies[0].append(el("tr", {}, ...cells));
     }
     sec.append(el("div", { class: "xscroll" }, t));
