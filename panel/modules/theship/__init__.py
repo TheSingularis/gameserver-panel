@@ -14,6 +14,7 @@ import shutil
 from pathlib import Path
 
 from ..base import ConfigField, GameModule, LaunchSpec, LogFn, Port
+from .bans import BansMixin
 
 SERVER_APP_ID = "443050"
 GAME_APP_ID = "383790"  # steam_appid.txt must stay this
@@ -25,7 +26,7 @@ PHASES = {"downloading": "Downloading", "verifying update": "Verifying", "verify
           "committing": "Finishing", "reconfiguring": "Preparing", "preallocating": "Preparing"}
 
 
-class TheShip(GameModule):
+class TheShip(BansMixin, GameModule):
     id = "theship"
     name = "The Ship: Remasted"
     description = "Murder-mystery hunt on a cruise ship. Dedicated server with a public listing."
