@@ -227,7 +227,7 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         return mod
 
     async def players_payload(mod, sup):
-        return {**(await mod.player_lists()), "live": sup.state == "running" and mod.console_input}
+        return {**(await mod.player_lists()), "live": sup.state == "running" and mod.console_input, "running": sup.state == "running"}
 
     @app.get("/api/servers/{sid}/players", dependencies=protected)
     async def players(sid: str):
@@ -261,8 +261,6 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
         try:
             if sup.state == "running" and mod.console_input:  # the game applies it and writes its own files
                 await sup.send(mod.player_command(kind, action, body.get("value"), body))
-                if mod.edit_file_when_live:
-                    await mod.player_edit(kind, action, body.get("value"), body)
                 await asyncio.sleep(0.7)  # let it write the list before we read it back
                 applied = "live"
             else:

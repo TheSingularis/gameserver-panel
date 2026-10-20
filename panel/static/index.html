@@ -1018,7 +1018,7 @@ async function loadPlayers() {
 async function plAct(kind, action, value, extra = {}) {
   try {
     const r = await api("POST", `/api/servers/${S.sid}/players/${kind}/${action}`, { value, ...extra });
-    S.pl = r; renderPlayers(); toast(r.applied === "live" ? "Sent to the server. Its reply is in the console." : "Saved. It applies when the server starts.");
+    S.pl = r; renderPlayers(); toast(r.applied === "live" ? "Sent to the server. Its reply is in the console." : r.running && r.info.restart_applies ? "Saved. Restart the server to apply it." : "Saved. It applies when the server starts.");
   } catch (e) { toast(e.message, true); }
 }
 function renderPlayers() {
@@ -1101,6 +1101,10 @@ function shipLeft(b) {  // time left on a ban, from the ISO end time the server 
 }
 function shipBans(pl) {  // The Ship bans players by Steam ID for a number of minutes
   const rows = pl.lists.bans || [], sec = el("section", { class: "pl-sec" });
+  if (pl.running && pl.info.restart_applies) sec.append(el("div", { class: "cfg-warn", style: "margin-bottom:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap" },
+    el("span", { text: "The Ship keeps its bans in memory, so changes here apply after a restart." }),
+    el("button", { class: "btn small", type: "button", text: "Restart now",
+      onclick: async () => { if (await confirmModal("Restart the server?", "Players are disconnected and the server is back in about a minute. Changes to the ban list apply when it starts.", "Restart now", true)) run("restart"); } })));
   if (!rows.length) sec.append(el("p", { class: "pl-empty", text: "Nobody is banned." }));
   else {
     const t = el("table", { class: "ports" }, el("thead", {}, el("tr", {}, ...["Player", "Steam ID", "Time left"].map((c) => el("th", { text: c })), el("th", {}))), el("tbody"));
