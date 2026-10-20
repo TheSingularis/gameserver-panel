@@ -7,9 +7,9 @@ The file looks like this (CRLF line endings, the player's name sits in a comment
     // Some Player
     76561198033914776 60 2026-10-20T01:43:47:736
 
-The running game keeps its bans in memory and only the console changes them live (`banid_steamid`, `removeid_steamid`,
-`removeid_all`). So while the server runs the panel types the command and also writes the same change to the file, which
-keeps the list on screen right and survives a restart; while it is stopped it only edits the file.
+The running game keeps its bans in memory and re-reads the file only at start (its own server.cfg says a restart clears
+them), and its console does not answer typed input under wine. So the panel only edits the file; a change on a running
+server applies after a restart, which the Bans list offers.
 """
 from __future__ import annotations
 
@@ -36,8 +36,6 @@ def _stamp(ends: str | None) -> str:
 
 class BansMixin:
     players = True
-    console_input = True  # the game's own console takes the ban commands; the panel pipes its stdin
-    edit_file_when_live = True
     suggests_players = False  # no name boxes: a ban is by Steam ID
 
     def _bans_path(self):
@@ -77,6 +75,7 @@ class BansMixin:
     async def player_lists(self) -> dict:
         return {"lists": {"bans": self._read_bans()},
                 "info": {"views": [["bans", "Banned"]], "layout": "ship",
+                         "restart_applies": True,
                          "stopped_text": "The server is stopped: changes are saved to the ban list and apply when it starts."}}
 
     @staticmethod
@@ -95,18 +94,6 @@ class BansMixin:
         if not 0 <= minutes <= MAX_MINUTES:
             raise ValueError("minutes is 0 (permanent) to 525600 (a year)")
         return minutes
-
-    def player_command(self, kind: str, action: str, value: object, extra: dict) -> str:
-        if kind != "bans":
-            raise ValueError("unknown list")
-        if action == "clear":
-            return "removeid_all"
-        sid = self._steamid(value)
-        if action == "add":
-            return f"banid_steamid {sid} {self._minutes(extra)}"
-        if action == "remove":
-            return f"removeid_steamid {sid}"
-        raise ValueError("unknown action")
 
     async def player_edit(self, kind: str, action: str, value: object, extra: dict) -> None:
         if kind != "bans":

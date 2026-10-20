@@ -30,7 +30,7 @@ async def test_reads_the_ban_file_with_name_and_end_time(ship):
     assert r.json()["lists"]["bans"] == [{"steamid": "76561198033914776", "name": "Some Player", "minutes": 60, "ends": "2026-10-20T01:43:47.736Z"}]
     assert r.json()["info"]["views"] == [["bans", "Banned"]]
     d = (await ship.get(f"/api/servers/{ship.sid}")).json()
-    assert d["players"] is True and d["console_input"] is True
+    assert d["players"] is True and d["console_input"] is False
 
 
 async def test_missing_file_is_an_empty_list(ship):
@@ -57,7 +57,7 @@ async def test_removing_keeps_other_bans_and_their_names(ship):
     assert r.json()["lists"]["bans"] == [{"steamid": "76561198000000003", "name": "Other", "minutes": 15, "ends": "2026-10-20T02:00:00.000Z"}]
 
 
-async def test_running_server_gets_console_commands_and_the_file_follows(ship, monkeypatch):
+async def test_running_server_still_edits_the_file_and_says_a_restart_is_needed(ship, monkeypatch):
     sent = []
 
     async def send(cmd):
@@ -67,11 +67,11 @@ async def test_running_server_gets_console_commands_and_the_file_follows(ship, m
     monkeypatch.setattr(sup, "state", "running")
     base = f"/api/servers/{ship.sid}/players/bans"
     r = await ship.post(f"{base}/add", json={"value": "76561198000000001", "minutes": 45})
-    assert r.json()["applied"] == "live" and sent == ["banid_steamid 76561198000000001 45"]
-    assert r.json()["lists"]["bans"][0]["steamid"] == "76561198000000001"
+    assert r.json()["applied"] == "file" and r.json()["running"] is True and r.json()["live"] is False
+    assert r.json()["info"]["restart_applies"] is True and r.json()["lists"]["bans"][0]["steamid"] == "76561198000000001"
     await ship.post(f"{base}/remove", json={"value": "76561198000000001"})
-    await ship.post(f"{base}/clear", json={})
-    assert sent[1:] == ["removeid_steamid 76561198000000001", "removeid_all"]
+    r = await ship.post(f"{base}/clear", json={})
+    assert r.json()["lists"]["bans"] == [] and sent == []  # nothing is typed to the game
 
 
 async def test_bad_input_is_refused_before_anything_is_typed(ship, monkeypatch):
