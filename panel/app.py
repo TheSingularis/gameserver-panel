@@ -200,12 +200,37 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
     async def status(sid: str):
         return server(sid).supervisor.status()
 
+    def ports_payload(sid: str) -> dict:
+        s = server(sid)
+        return {"ports": netcheck.port_status(s.module.active_ports(), mine_running=s.supervisor.state == "running"),
+                "game_port": s.module.game_port(), "conflict": mgr.port_conflict(sid), "running": s.supervisor.state == "running"}
+
     @app.get("/api/servers/{sid}/ports", dependencies=protected)
     async def ports(sid: str):
-        return {"ports": netcheck.port_status(server(sid).module.ports)}
+        return ports_payload(sid)
+
+    @app.put("/api/servers/{sid}/port", dependencies=protected)
+    async def set_port(sid: str, body: dict):
+        """Set the game's port in one place (it writes the game's own setting), refusing one another server already uses."""
+        mod = server(sid).module
+        old, port = mod.game_port(), body.get("port")
+        if old is None:
+            raise HTTPException(404, f"{mod.name} uses fixed ports")
+        if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+            raise HTTPException(400, "a port is a whole number from 1024 to 65535")
+        mod.set_game_port(port)
+        msg = mgr.port_conflict(sid)
+        if msg:
+            mod.set_game_port(old)
+            raise HTTPException(409, msg)
+        return ports_payload(sid)
 
     async def control(sid: str, name: str):
         sup = server(sid).supervisor
+        if name == "start":
+            blocked = mgr.start_blocker(sid)
+            if blocked:
+                raise HTTPException(409, blocked)
         try:
             await getattr(sup, name)()
         except RuntimeError as e:
@@ -380,7 +405,13 @@ def create_app(settings: Settings, manager: ServerManager | None = None, oidc: O
             except ValueError as e:
                 raise HTTPException(400, str(e))
         p.parent.mkdir(parents=True, exist_ok=True)
+        before, old = server(sid).module.game_port(), (p.read_text(errors="replace") if p.exists() else None)
         p.write_text(text)
+        if server(sid).module.game_port() != before:  # the port setting changed: keep it only if no other server uses it
+            msg = mgr.port_conflict(sid)
+            if msg:
+                p.write_text(old) if old is not None else p.unlink()
+                raise HTTPException(409, msg)
         return {"ok": True, "note": "restart the server to apply"}
 
     async def stream_to_temp(request: Request, sid: str) -> Path:

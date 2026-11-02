@@ -36,12 +36,15 @@ def listening(proc: Path = PROC) -> dict[str, set[int]]:
     return {"tcp": read("tcp", TCP_LISTEN), "udp": read("udp", None)}
 
 
-def port_status(specs, proc: Path = PROC) -> list[dict]:
+def port_status(specs, proc: Path = PROC, mine_running: bool = True) -> list[dict]:
+    """One row per port. `listening` means this server holds it; a port bound while this server is not running is `taken`
+    (by another server or some other program), so one server never looks healthy because another holds its port."""
     bound = listening(proc)
     rows = []
     for spec in specs:
         for proto in spec.proto.split("+"):
             for port in range(spec.start, spec.end + 1):
+                up = port in bound[proto]
                 rows.append({"port": port, "proto": proto, "required": spec.required,
-                             "note": spec.note, "listening": port in bound[proto]})
+                             "note": spec.note, "listening": up and mine_running, "taken": up and not mine_running})
     return rows

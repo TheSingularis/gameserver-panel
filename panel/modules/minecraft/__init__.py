@@ -269,6 +269,36 @@ class Minecraft(ContentMixin, PlayersMixin, GameModule):
             raise RuntimeError("no versions were listed")
         return {"choices": found, "latest": latest, "experimental": experimental}
 
+    # -- ports ---------------------------------------------------------------
+    def game_port(self) -> int:
+        try:
+            port = int(self._props("server.properties").get("server-port", "25565"))
+        except ValueError:
+            return 25565
+        return port if 1 <= port <= 65535 else 25565
+
+    def active_ports(self) -> list[Port]:
+        """The port the server.properties file asks for (and the query port while enable-query is on), not a fixed 25565."""
+        port, props = self.game_port(), self._props("server.properties")
+        query = port
+        if props.get("enable-query", "false").lower() == "true":
+            try:
+                query = int(props.get("query.port", "25565"))
+            except ValueError:
+                query = 25565
+        return [Port(port, port, "tcp", "Java Edition clients connect here"),
+                Port(query, query, "udp", "only used if you turn on enable-query", required=False)]
+
+    def set_game_port(self, port: int) -> None:
+        path = self.config_dir / "server.properties"
+        text = path.read_text(errors="replace") if path.exists() else ""
+        line = f"server-port={port}"
+        text, n = re.subn(r"(?m)^[ \t]*server-port[ \t]*=.*$", line, text, count=1)
+        if not n:
+            text = text + ("" if text.endswith("\n") or not text else "\n") + line + "\n"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
     # -- settings ----------------------------------------------------------
     def prepare(self, options: dict | None = None) -> None:
         """Create the settings files so the Config tab has something to show before the first install."""

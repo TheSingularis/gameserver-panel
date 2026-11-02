@@ -14,8 +14,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import netcheck
 from .modules import ModuleInfo, catalog
-from .modules.base import GameModule
+from .modules.base import GameModule, Port
 from .supervisor import Supervisor
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -136,8 +137,55 @@ class ServerManager:
         except Exception:
             del self.servers[sid]
             raise
+        self._pick_free_port(srv)
         self._save()
         return srv
+
+    # ---- ports ----------------------------------------------------------
+    @staticmethod
+    def _overlap(a: Port, b: Port) -> int | None:
+        """First port both ranges cover on a protocol they share, else None."""
+        if a.start > b.end or b.start > a.end or not set(a.proto.split("+")) & set(b.proto.split("+")):
+            return None
+        return max(a.start, b.start)
+
+    def port_conflict(self, sid: str, running_only: bool = False) -> str | None:
+        """Does another server (set up, or only the running ones) want a port this one needs? Says which, or None."""
+        mine = [p for p in self.get(sid).module.active_ports() if p.required]
+        for other in self.servers.values():
+            if other.id == sid or (running_only and other.supervisor.state != "running"):
+                continue
+            for theirs in (p for p in other.module.active_ports() if p.required):
+                for ours in mine:
+                    hit = self._overlap(ours, theirs)
+                    if hit:
+                        return (f"Port {hit} is in use by {other.name}, which is running. Stop it or change one of the ports." if running_only
+                                else f"Port {hit} is already used by {other.name}. Pick another port.")
+        return None
+
+    def start_blocker(self, sid: str) -> str | None:
+        """Why this server can't start on its ports right now: a running server of ours has them, or something else does."""
+        msg = self.port_conflict(sid, running_only=True)
+        if msg:
+            return msg
+        bound = netcheck.listening()
+        for p in (p for p in self.get(sid).module.active_ports() if p.required):
+            for proto in p.proto.split("+"):
+                for port in range(p.start, p.end + 1):
+                    if port in bound[proto]:
+                        return f"Port {port} ({proto.upper()}) is already in use on this machine by something other than this server."
+        return None
+
+    def _pick_free_port(self, srv: Server) -> None:
+        """A new server asks for the game's default port; when another server has it, move up to the next free one."""
+        mod, port = srv.module, srv.module.game_port()
+        if port is None:
+            return
+        for _ in range(100):
+            if not self.port_conflict(srv.id) or port >= 65535:
+                return
+            port += 1
+            mod.set_game_port(port)
 
     @staticmethod
     def _clean_options(module: GameModule, options: dict | None) -> dict:
@@ -198,6 +246,10 @@ class ServerManager:
                     continue
                 if not srv.module.is_installed():
                     srv.supervisor.log("[panel] auto-start skipped: game files are not installed yet")
+                    continue
+                blocked = self.start_blocker(sid)
+                if blocked:
+                    srv.supervisor.log(f"[panel] auto-start skipped: {blocked}")
                     continue
                 if started:
                     await sleep(stagger)

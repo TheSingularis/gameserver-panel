@@ -162,11 +162,23 @@ class GameModule:
         """Module-specific actions exposed at POST /api/actions/{name}."""
         return {}
 
+    def active_ports(self) -> list[Port]:
+        """The ports this server uses right now. A game whose port is a setting overrides this to read it."""
+        return self.ports
+
+    def game_port(self) -> int | None:
+        """The main port when the panel can change it (the Network tab shows a field); None when the game's ports are fixed."""
+        return None
+
+    def set_game_port(self, port: int) -> None:
+        raise ValueError(f"{self.name} uses fixed ports")
+
     def describe(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
-            "ports": [p.__dict__ for p in self.ports],
+            "ports": [p.__dict__ for p in self.active_ports()],
+            "game_port": self.game_port(),
             "config_files": self.config_files,
             "config_format": self.config_format,
             "config_schema": {f: [asdict(x) for x in fs] for f, fs in self.config_schema.items()},
