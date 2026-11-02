@@ -452,6 +452,13 @@ a.btn.primary { color: var(--accent-ink); }
 
       <div id="tpNetwork" data-panel="network" hidden>
         <div class="card pad">
+          <form class="pl-add" id="portForm" autocomplete="off" hidden style="margin-bottom:6px">
+            <label for="gamePort" style="font-weight:600;align-self:center">Game port</label>
+            <input class="input" id="gamePort" type="number" min="1024" max="65535" inputmode="numeric" style="max-width:130px" aria-label="Game port">
+            <button class="btn primary" id="portSave" type="submit">Save</button>
+          </form>
+          <div class="cfg-warn" id="portWarn" hidden style="margin-bottom:10px"></div>
+          <p class="hint" id="portSaved" hidden style="margin:0 0 12px"></p>
           <div class="eyebrow" style="margin-bottom:10px">Ports to forward</div>
           <div class="xscroll"><table class="ports" id="ports">
             <thead><tr><th>Port</th><th>Protocol</th><th>Needed</th><th>Server</th></tr></thead>
@@ -1308,8 +1315,9 @@ function renderPorts(rows) {
     const f = g[0], lo = Math.min(...g.map((x) => x.port)), hi = Math.max(...g.map((x) => x.port));
     const srv = el("td");
     if (f.required) {
-      const up = g.filter((x) => x.listening).length;
-      srv.append(el("span", { class: "pill " + (up === g.length ? "ok" : "bad") }, el("i"), up === g.length ? "Listening" : up ? `${up}/${g.length} listening` : "Not listening"));
+      const up = g.filter((x) => x.listening).length, taken = g.some((x) => x.taken);
+      srv.append(taken ? el("span", { class: "pill bad", title: "Another server or program is already using this port" }, el("i"), "In use elsewhere")
+        : el("span", { class: "pill " + (up === g.length ? "ok" : "bad") }, el("i"), up === g.length ? "Listening" : up ? `${up}/${g.length} listening` : "Not listening"));
     } else srv.append(el("span", { class: "muted", text: "—" }));
     tb.append(el("tr", {}, el("td", { class: "num" }, lo === hi ? String(lo) : `${lo}–${hi}`, el("div", { class: "muted note", style: "font-size:12px;font-family:var(--sans);white-space:normal;margin-top:2px", text: f.note })),
       el("td", { text: f.proto.toUpperCase() }), el("td", { text: f.required ? "Yes" : "Maybe" }), srv));
@@ -1320,7 +1328,20 @@ function renderPorts(rows) {
     ? "The server is listening. Forward these on your router to this machine’s LAN address, then test from outside your network (a phone on mobile data, or a friend). “Listening” only means the server is bound locally."
     : "Forward these on your router to this machine’s LAN address. “Listening” shows once the server is running.";
 }
-async function refreshPorts() { const sid = S.sid; if (!sid) return; try { const r = await api("GET", `/api/servers/${sid}/ports`); if (S.sid === sid) renderPorts(r.ports); } catch (_) {} }
+function renderPortForm(r) {  // a game whose port is a setting gets one field here; it writes the game's own setting
+  $("#portForm").hidden = r.game_port == null;
+  if (r.game_port != null && document.activeElement !== $("#gamePort")) $("#gamePort").value = r.game_port;
+  const w = $("#portWarn"); w.textContent = r.conflict || ""; w.hidden = !r.conflict;
+}
+async function refreshPorts() { const sid = S.sid; if (!sid) return; try { const r = await api("GET", `/api/servers/${sid}/ports`); if (S.sid === sid) { renderPorts(r.ports); renderPortForm(r); } } catch (_) {} }
+$("#portForm").onsubmit = async (e) => {
+  e.preventDefault(); const port = Number($("#gamePort").value), sid = S.sid, b = $("#portSave"); b.disabled = true;
+  try {
+    const r = await api("PUT", `/api/servers/${sid}/port`, { port });
+    if (S.sid === sid) { renderPorts(r.ports); renderPortForm(r); const n = $("#portSaved"); n.textContent = r.running ? `Saved. Restart the server to use port ${r.game_port}, and forward it on your router.` : `Saved. Forward port ${r.game_port} on your router.`; n.hidden = false; }
+  } catch (err) { toast(err.message, true); const w = $("#portWarn"); w.textContent = err.message; w.hidden = false; }
+  b.disabled = false;
+};
 
 /* ---------- log ---------- */
 const MAX_LINES = 1500; let lines = [];
