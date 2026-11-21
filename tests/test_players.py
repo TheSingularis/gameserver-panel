@@ -132,3 +132,58 @@ async def test_suggestions_combine_online_and_joined_players(mc, monkeypatch):
     monkeypatch.setattr(sup, "state", "running")
     r = (await mc.get(f"/api/servers/{mc.sid}/players/suggest")).json()
     assert r["online"] == ["Steve"] and r["live"] is True and r["known"] == ["Alex", "Bob"]
+
+
+def legacy_files(mc, ops="jadieboo222\n[buildcraft]\nepicness181\nthesingularis\n"):
+    d = mc.srv.server_dir
+    d.mkdir(parents=True, exist_ok=True)
+    for f, text in (("ops.txt", ops), ("white-list.txt", ""), ("banned-players.txt", ""), ("banned-ips.txt", "")):
+        (d / f).write_text(text)
+    return d
+
+
+async def test_old_minecraft_lists_are_read_from_the_txt_files(mc):  # Tekkit Classic, Minecraft 1.2.5
+    legacy_files(mc)
+    r = (await mc.get(f"/api/servers/{mc.sid}/players")).json()
+    assert [e["name"] for e in r["lists"]["ops"]] == ["jadieboo222", "[buildcraft]", "epicness181", "thesingularis"]
+    assert r["info"]["legacy"] is True and r["lists"]["whitelist"] == [] and r["lists"]["banned-ips"] == []
+
+
+async def test_old_minecraft_edits_the_txt_files_without_a_mojang_lookup(mc):
+    d = legacy_files(mc)
+    base = f"/api/servers/{mc.sid}/players"
+    r = await mc.post(f"{base}/ops/add", json={"value": "Steve"})  # Mojang is not asked: the fake network would answer, but no UUID is stored
+    assert r.json()["applied"] == "file" and (d / "ops.txt").read_text().splitlines()[-1] == "steve"
+    assert (await mc.post(f"{base}/ops/add", json={"value": "STEVE"})).status_code == 400  # already there
+    r = await mc.post(f"{base}/ops/remove", json={"value": "[buildcraft]"})  # a junk entry can still be removed
+    assert [e["name"] for e in r.json()["lists"]["ops"]] == ["jadieboo222", "epicness181", "thesingularis", "steve"]
+    assert (await mc.post(f"{base}/ops/set_level", json={"value": "steve", "level": 2})).status_code == 400
+    r = await mc.post(f"{base}/banned-ips/add", json={"value": "10.0.0.5", "reason": "spam"})
+    assert (d / "banned-ips.txt").read_text() == "10.0.0.5\n" and not (d / "ops.json").exists()
+
+
+async def test_old_minecraft_console_commands_carry_no_reason(mc, monkeypatch):
+    legacy_files(mc)
+    sent = []
+
+    async def send(cmd):
+        sent.append(cmd)
+    monkeypatch.setattr(mc.srv.supervisor, "send", send)
+    monkeypatch.setattr(mc.srv.supervisor, "state", "running")
+    base = f"/api/servers/{mc.sid}/players"
+    await mc.post(f"{base}/banned-players/add", json={"value": "Steve", "reason": "griefing"})
+    await mc.post(f"{base}/ops/remove", json={"value": "[buildcraft]"})
+    assert sent == ["ban Steve", "deop [buildcraft]"]
+    assert (await mc.post(f"{base}/ops/remove", json={"value": "bad name; op x"})).status_code == 400  # still cannot start a second command
+
+
+def test_old_game_answer_to_list_is_understood():
+    from panel.modules.minecraft.players import online_from_log
+    assert online_from_log(["> list", "Connected players: Steve, Alex"]) == ["Steve", "Alex"]
+
+
+async def test_new_lists_still_win_when_both_formats_exist(mc):
+    d = legacy_files(mc)
+    (d / "ops.json").write_text("[]")
+    r = (await mc.get(f"/api/servers/{mc.sid}/players")).json()
+    assert r["lists"]["ops"] == [] and "legacy" not in r["info"]

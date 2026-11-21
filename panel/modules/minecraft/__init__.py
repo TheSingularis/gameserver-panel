@@ -365,7 +365,7 @@ class Minecraft(ContentMixin, PlayersMixin, GameModule):
             level = "world"
         # Worlds (Vanilla/old Paper keep the nether and end beside the main world), who may join, plugins with their
         # settings, and the server's own root settings files (Paper/Spigot/Bukkit) and icon.
-        fixed = [level, f"{level}_nether", f"{level}_the_end", "ops.json", "whitelist.json",
+        fixed = [level, f"{level}_nether", f"{level}_the_end", "ops.json", "whitelist.json", "ops.txt", "white-list.txt", "banned-players.txt", "banned-ips.txt",
                  "banned-players.json", "banned-ips.json", "plugins", "config", "datapacks-disabled",
                  "bukkit.yml", "spigot.yml", "commands.yml", "permissions.yml", "help.yml", "server-icon.png", "usercache.json"]
         return fixed + [d for d in self._world_dirs() if d not in fixed]
@@ -504,7 +504,8 @@ class Minecraft(ContentMixin, PlayersMixin, GameModule):
     # -- uploaded modpack ---------------------------------------------------
     def _keep_on_repack(self) -> list[str]:
         level = self.persistent_paths[:3] + self._world_dirs()  # world, nether, end, and any other world folder
-        return level + ["ops.json", "whitelist.json", "banned-players.json", "banned-ips.json", "usercache.json"]
+        return level + ["ops.json", "whitelist.json", "banned-players.json", "banned-ips.json", "usercache.json",
+                        "ops.txt", "white-list.txt", "banned-players.txt", "banned-ips.txt"]
 
     def accept_upload(self, path: Path, log: LogFn) -> None:
         if self._flavor() != "pack":

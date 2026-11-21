@@ -1136,13 +1136,16 @@ function plSection(kind, title, pl) {
   const rows = pl.lists[kind] || [], isIp = kind === "banned-ips", key = isIp ? "ip" : "name", sec = el("section", { class: "pl-sec" });
   if (title) sec.append(el("h3", { class: "eyebrow", text: title }));
   if (kind === "whitelist" && !pl.info.whitelist_enabled) sec.append(el("div", { class: "cfg-warn", style: "margin-bottom:10px", text: "The whitelist is turned off, so these names are not enforced yet. Turn it on under Config, Access & network." }));
-  const cols = { whitelist: ["Player", "UUID"], ops: ["Operator", "Level", "Bypass player limit"], "banned-players": ["Player", "Reason", "Expires"], "banned-ips": ["IP address", "Reason", "Expires"] }[kind];
+  const legacy = !!pl.info.legacy;  // an older Minecraft keeps names only: no UUID, level, reason or expiry
+  const cols = legacy ? { whitelist: ["Player"], ops: ["Operator"], "banned-players": ["Player"], "banned-ips": ["IP address"] }[kind]
+    : { whitelist: ["Player", "UUID"], ops: ["Operator", "Level", "Bypass player limit"], "banned-players": ["Player", "Reason", "Expires"], "banned-ips": ["IP address", "Reason", "Expires"] }[kind];
   if (!rows.length) sec.append(el("p", { class: "pl-empty", text: "Nobody on this list." }));
   else {
     const t = el("table", { class: "ports" }, el("thead", {}, el("tr", {}, ...cols.map((c) => el("th", { text: c })), el("th", {}))), el("tbody"));
     for (const r of rows) {
       const cells = [el("td", { text: r[key] || "" })];
-      if (kind === "whitelist") cells.push(el("td", { class: "num", style: "font-size:12px;color:var(--muted)", text: r.uuid || "" }));
+      if (legacy) { /* the name is the whole row */ }
+      else if (kind === "whitelist") cells.push(el("td", { class: "num", style: "font-size:12px;color:var(--muted)", text: r.uuid || "" }));
       else if (kind === "ops") {
         if (pl.live) cells.push(el("td", { text: String(r.level ?? ""), title: "Stop the server to change a level" }));
         else {
@@ -1159,7 +1162,7 @@ function plSection(kind, title, pl) {
   }
   const box = isIp ? null : playerBox(kind);  // a dropdown of known players that also takes anything typed
   const name = box ? box.input : el("input", { class: "input", placeholder: "IP address to ban", autocomplete: "off", "aria-label": "IP address", maxlength: "45" });
-  const reason = kind.startsWith("banned") ? el("input", { class: "input", placeholder: "Reason (optional)", autocomplete: "off", "aria-label": "Reason", maxlength: "100" }) : null;
+  const reason = kind.startsWith("banned") && !legacy ? el("input", { class: "input", placeholder: "Reason (optional)", autocomplete: "off", "aria-label": "Reason", maxlength: "100" }) : null;
   const form = el("form", { class: "pl-add", onsubmit: async (e) => { e.preventDefault(); if (!name.value.trim()) return; await plAct(kind, "add", name.value.trim(), reason ? { reason: reason.value } : {}); } },
     box ? box.node : name, reason, el("button", { class: "btn primary", type: "submit", text: kind.startsWith("banned") ? "Ban" : "Add" }));
   sec.append(form); return sec;

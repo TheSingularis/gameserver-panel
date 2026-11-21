@@ -25,9 +25,16 @@ KINDS = {  # list id -> file
     "banned-players": "banned-players.json",
     "banned-ips": "banned-ips.json",
 }
+LEGACY = {  # Minecraft before 1.7.6 (Tekkit Classic is 1.2.5): plain text, one name or IP per line, no UUIDs, levels or reasons
+    "whitelist": "white-list.txt",
+    "ops": "ops.txt",
+    "banned-players": "banned-players.txt",
+    "banned-ips": "banned-ips.txt",
+}
 PROFILE_API = "https://api.mojang.com/users/profiles/minecraft/"
 BAN_REASON = "Banned by an operator."
-ONLINE_REPLY = re.compile(r"There are \d+ of a max of \d+ players online:\s*(.*?)\s*$")  # the game's answer to `list`
+ONLINE_REPLY = re.compile(r"(?:There are \d+ of a max of \d+ players online|Connected players):\s*(.*?)\s*$")  # the game's answer to `list`, new and old wording
+SHOWN_NAME = re.compile(r"^[^\s\x00-\x1f\x7f]{1,64}$")  # an entry already on a list may be removed whatever it looks like
 
 
 def offline_uuid(name: str) -> str:
@@ -63,15 +70,24 @@ class PlayersMixin:
     _PLAYERS_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests put a fake network here
 
     # -- reading ------------------------------------------------------------
+    def _legacy(self) -> bool:
+        """An old server keeps its lists as .txt files. Use that format when only those exist (a new server has the .json ones)."""
+        d = self.server_dir
+        return not any((d / f).exists() for f in KINDS.values()) and any((d / f).exists() for f in LEGACY.values())
+
     def _list_path(self, kind: str) -> Path:
         if kind not in KINDS:
             raise ValueError("unknown list")
-        return self.server_dir / KINDS[kind]
+        return self.server_dir / (LEGACY if self._legacy() else KINDS)[kind]
 
     def _read_list(self, kind: str) -> list[dict]:
         p = self._list_path(kind)
         if not p.exists():
             return []
+        if self._legacy():
+            key = "ip" if kind == "banned-ips" else "name"
+            names = [ln.strip() for ln in p.read_text(errors="replace").splitlines()]
+            return [{key: n} for n in names if n and not n.startswith("#")]
         try:
             data = json.loads(p.read_text(errors="replace") or "[]")
         except ValueError:
@@ -82,14 +98,20 @@ class PlayersMixin:
         p = self._list_path(kind)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(entries, indent=2))
+        if self._legacy():
+            key = "ip" if kind == "banned-ips" else "name"
+            tmp.write_text("".join(f"{e[key]}\n" for e in entries))
+        else:
+            tmp.write_text(json.dumps(entries, indent=2))
         os.replace(tmp, p)
 
     async def player_lists(self) -> dict:
         props = self._props("server.properties")
         return {"lists": {k: self._read_list(k) for k in KINDS},
                 "info": {"whitelist_enabled": props.get("white-list", "false").lower() == "true",
-                         "online_mode": props.get("online-mode", "true").lower() != "false"}}
+                         "online_mode": props.get("online-mode", "true").lower() != "false",
+                         **({"legacy": True, "stopped_text": "The server is stopped: changes are saved to the lists and apply when it starts. This is an older Minecraft version, so the lists are names only."}
+                            if self._legacy() else {})}}
 
     def online_players(self, console_lines: list[str]) -> list[str] | None:
         return online_from_log(console_lines)
@@ -105,8 +127,10 @@ class PlayersMixin:
 
     # -- checking what was asked ---------------------------------------------
     @staticmethod
-    def _subject(kind: str, value: object) -> str:
+    def _subject(kind: str, value: object, removing: bool = False) -> str:
         value = str(value or "").strip()
+        if removing and SHOWN_NAME.fullmatch(value):
+            return value
         if kind == "banned-ips":
             try:
                 return str(ipaddress.ip_address(value))
@@ -118,8 +142,8 @@ class PlayersMixin:
 
     # -- while the server runs: type the command ------------------------------
     def player_command(self, kind: str, action: str, value: object, extra: dict) -> str:
-        subject = self._subject(kind, value)
-        reason = clean_reason(extra.get("reason"))
+        subject = self._subject(kind, value, action == "remove")
+        reason = "" if self._legacy() else clean_reason(extra.get("reason"))  # old servers take no reason
         if kind == "whitelist" and action in ("add", "remove"):
             return f"whitelist {action} {subject}"
         if kind == "ops" and action == "add":
@@ -155,10 +179,22 @@ class PlayersMixin:
         return str(uuid.UUID(data["id"])), data.get("name", name)
 
     async def player_edit(self, kind: str, action: str, value: object, extra: dict) -> None:
-        subject = self._subject(kind, value)
+        subject = self._subject(kind, value, action == "remove")
         entries = self._read_list(kind)
         key = "ip" if kind == "banned-ips" else "name"
         same = lambda e: str(e.get(key, "")).lower() == subject.lower()
+        if self._legacy():  # names only: no Mojang lookup, no UUIDs, no levels
+            if action == "remove":
+                self._write_list(kind, [e for e in entries if not same(e)])
+            elif action == "add":
+                if any(same(e) for e in entries):
+                    raise ValueError(f"{subject} is already on this list.")
+                self._write_list(kind, entries + [{key: subject if kind == "banned-ips" else subject.lower()}])
+            elif action == "set_level":
+                raise ValueError("This older Minecraft version has no operator levels.")
+            else:
+                raise ValueError("unknown action")
+            return
         if action == "remove":
             self._write_list(kind, [e for e in entries if not same(e)])
             return
